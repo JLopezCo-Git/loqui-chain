@@ -43,6 +43,8 @@ Si en el futuro se necesita un agente con lectura y escritura (por ejemplo, regi
 ## 6. Despliegue
 
 > `better-sqlite3@13.x` requiere Node ≥22 (ver `engines` en su `package.json`) — el `Dockerfile` usa `node:22-bookworm-slim` en las tres etapas por esto. Bajarlo a Node 20 crashea el proceso con SIGSEGV al cargar el binario nativo (visto en el primer deploy real, 2026-08-06).
+>
+> `server.js` importa `db/initDb.js` al arrancar (efecto de módulo, `CREATE TABLE IF NOT EXISTS` + seed del admin solo si no existe) — el esquema y el usuario inicial se garantizan en cada boot, sobre el volumen que sea. No usar `release_command` en `fly.toml` para esto: en apps con `[[mounts]]`, la máquina de `release_command` no siempre tiene el volumen adjunto.
 
 
 Fly.io + GitHub Actions, nunca `fly deploy` local (el builder remoto de Fly falla desde la red de desarrollo local). Un solo contenedor: `Dockerfile` construye el frontend (`npm run build` → `dist/`) y el backend en etapas separadas; en runtime, `server/src/server.js` sirve `/api/*` y, cuando `NODE_ENV=production`, también sirve el `dist/` estático con fallback a `index.html` para las rutas de `react-router`.

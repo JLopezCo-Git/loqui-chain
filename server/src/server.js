@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import './db/initDb.js';
+
 import authRoutes from './routes/authRoutes.js';
 import cadenaRoutes from './routes/cadenaRoutes.js';
 import participanteRoutes from './routes/participanteRoutes.js';
