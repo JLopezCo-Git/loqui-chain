@@ -2,7 +2,7 @@
 # Basado en templates/Dockerfile.node de loqui-platform.
 
 # -- Frontend build --------------------------------------------
-FROM node:20-bookworm-slim AS frontend
+FROM node:22-bookworm-slim AS frontend
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -11,7 +11,7 @@ COPY src ./src
 RUN npm run build
 
 # -- Backend deps (build tools para dependencias nativas, ej. better-sqlite3) --
-FROM node:20-bookworm-slim AS backend-deps
+FROM node:22-bookworm-slim AS backend-deps
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/server
@@ -19,7 +19,7 @@ COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 
 # -- Runtime ------------------------------------------------------
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 WORKDIR /app
 COPY server ./server
 COPY --from=backend-deps /app/server/node_modules ./server/node_modules
