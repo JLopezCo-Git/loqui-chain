@@ -54,6 +54,46 @@ router.get('/cadena/:cadenaId/grilla', (req, res) => {
   res.json({ cadena, quincenas, filas, caja: saldoCaja(cadenaId) });
 });
 
+// Lo que exige atención ahora mismo en una cadena: cuotas vencidas (fecha
+// límite ya pasada y no pagadas), la próxima entrega programada, y si el
+// último arqueo de caja quedó con faltante. Pensado para el bloque
+// "Atención requerida" del dashboard -- no para navegar, solo para decidir.
+router.get('/cadena/:cadenaId/atencion', (req, res) => {
+  const cadenaId = Number(req.params.cadenaId);
+  const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
+  if (!cadena) return res.status(404).json({ error: 'Cadena no existe' });
+
+  const hoy = new Date().toISOString().slice(0, 10);
+
+  const vencidas = db.prepare(`
+    SELECT o.*, p.nombre participante, q.numero_quincena, q.fecha_limite_pago
+    FROM obligaciones o
+    JOIN participantes p ON p.id = o.participante_id
+    JOIN quincenas q ON q.id = o.quincena_id
+    WHERE o.cadena_id = ? AND o.estado <> 'PAGADA' AND q.fecha_limite_pago < ?
+    ORDER BY q.fecha_limite_pago
+  `).all(cadenaId, hoy);
+
+  const proximaEntrega = db.prepare(`
+    SELECT e.*, p.nombre participante
+    FROM entregas e
+    JOIN participantes p ON p.id = e.participante_id
+    WHERE e.cadena_id = ? AND e.estado <> 'ENTREGADA'
+    ORDER BY e.fecha_programada
+    LIMIT 1
+  `).get(cadenaId) || null;
+
+  const ultimoArqueo = db.prepare('SELECT * FROM arqueos_caja WHERE cadena_id = ? ORDER BY fecha DESC, id DESC LIMIT 1').get(cadenaId);
+  let arqueoFaltante = null;
+  if (ultimoArqueo) {
+    const otrasFuentes = db.prepare('SELECT COALESCE(SUM(monto),0) n FROM arqueo_items WHERE arqueo_id = ?').get(ultimoArqueo.id).n;
+    const falta = ultimoArqueo.esperado - ultimoArqueo.efectivo_contado - otrasFuentes;
+    if (falta > 0) arqueoFaltante = falta;
+  }
+
+  res.json({ vencidas, proximaEntrega, arqueoFaltante });
+});
+
 router.get('/cadena/:cadenaId', (req, res) => {
   const cadenaId = Number(req.params.cadenaId);
   const resumen = {

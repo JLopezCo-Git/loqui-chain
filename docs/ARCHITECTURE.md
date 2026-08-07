@@ -66,13 +66,17 @@ Pasos exactos: `loqui-platform/docs/CHECKLIST.md` §4-5.
 - Backend en JS (ESM, `type: module`), frontend en TypeScript.
 - Validación de entrada con `zod` en cada ruta que recibe body.
 - Montos como `REAL` (no enteros) — deuda técnica conocida heredada del diseño original, ver §9.
-- No definir colores/tipografía nuevos en el frontend — todo viene de `loqui-design-tokens` vía utilidades semánticas (`bg-surface`, `text-text-muted`, etc.).
+- No definir colores/tipografía nuevos en el frontend — todo viene de `loqui-design-tokens` vía utilidades semánticas (`bg-surface`, `text-text-muted`, etc.). Los estados semánticos (pagada/pendiente/vencida) se implementan **reasignando el uso** de `success`/`warning`/`error` ya existentes, no agregando tokens de color nuevos — ver la nota en `CadenaGrid.tsx` sobre por qué "pendiente dentro de plazo" ya no usa `error`.
+- Confirmaciones de acciones destructivas o irreversibles (borrar cadena, quitar jugador, cerrar sorteo, marcar pago/entrega) usan `components/ui/ConfirmPopover.tsx`, nunca `window.confirm`/`window.alert` — no son estilizables ni consistentes entre navegadores/lectores de pantalla.
+- Botones que son solo un símbolo/ícono (sin texto) usan `Button variant="icon"` (24×24 mínimo, WCAG 2.5.8) y **siempre** llevan `aria-label` — nunca un `<button>` a mano con solo `×` o un ícono.
+- Vista de matriz de pagos: en escritorio (`≥768px`) es `CadenaGrid.tsx`; en móvil es `AgendaQuincena.tsx` (vista por quincena, no la misma tabla comprimida) — el switch lo decide `useIsMobile()` (`src/hooks/useIsMobile.ts`), con el mismo umbral que el breakpoint `md` de Tailwind (768px). Si se ajusta uno, ajustar el otro.
 
 ## 8. Verificar antes de desplegar
 
 - `cd server && npm install && npm run init-db && npm run dev` — `GET /health` responde `{ ok: true }`, login con `admin@cadena.local` / `Admin123*` funciona.
 - `npm install && npm run build` en la raíz — build de TypeScript sin errores.
-- Con el backend corriendo, `npm run dev` en la raíz y probar manualmente cada página (Dashboard — grilla y arqueo de caja incluidos, Cadenas — incluye el sorteo inline, Participantes, Pagos, Entregas, IA).
+- Con el backend corriendo, `npm run dev` en la raíz y probar manualmente cada página (Dashboard — atención requerida, grilla/agenda y arqueo de caja incluidos, Cadenas — incluye el sorteo inline, Participantes, IA).
+- **No hay navegador headless disponible en el entorno de desarrollo de este proyecto** — el comportamiento responsive (375/768/1024/1440/1920px) y el foco visible/lector de pantalla se verifican por inspección de las clases de Tailwind usadas, no con captura real. Verificar visualmente en un navegador real antes de confiar ciegamente en un cambio de layout grande.
 
 ## 9. Deuda técnica conocida
 
@@ -84,5 +88,7 @@ Pasos exactos: `loqui-platform/docs/CHECKLIST.md` §4-5.
 - Sin pruebas automatizadas.
 - Montos financieros como `REAL` en vez de enteros (centavos) — a diferencia del patrón recomendado en `cuentas-familiares`; considerar migrar si crece el volumen de transacciones.
 - Permisos de rol `PARTICIPANTE` no implementados (solo existe el rol, sin rutas específicas).
+- `Cadenas.tsx` sigue siendo un componente grande que mezcla crear/listar/editar/sorteo en un solo archivo — se agregaron confirmaciones y mejoras puntuales (auditoría UX 2026-08-07) pero no se dividió en subcomponentes; queda pendiente si crece más.
+- No hay endpoint de reversa de pagos/entregas — el click-to-pay/entregar ahora pide confirmación explícita antes de ejecutar (`ConfirmPopover`), pero una vez confirmado no hay "deshacer". Si se necesita, es una reversión financiera real (afecta `caja_movimientos`), no un simple `DELETE`.
 - No hay forma de deshacer un puesto/jugador de una cadena ya `ACTIVA`, ni de editar montos con recálculo de lo ya generado — ver "Edición y borrado" en §4. Si se necesita, requiere diseñar una reversión financiera explícita (no un simple `DELETE`).
 - `documento` y `email` de `participantes` existen como columnas huérfanas en bases ya desplegadas antes de 2026-08-07 (la app ya no los lee ni escribe) — no se hizo una migración `DROP COLUMN`, solo se dejó de usarlas.

@@ -8,14 +8,13 @@ import { Banner } from '../components/ui/Banner';
 import type { Participante } from '../types';
 
 const FORM_INICIAL = { nombre: '', celular: '', observaciones: '' };
-const LINK_INICIAL = { cadena_id: '', participante_id: '', cantidad_puestos: '1', fraccion_total: '1' };
 
 type EditForm = { nombre: string; celular: string; observaciones: string };
 
 export function Participantes() {
   const [items, setItems] = useState<Participante[]>([]);
   const [form, setForm] = useState(FORM_INICIAL);
-  const [link, setLink] = useState(LINK_INICIAL);
+  const [buscar, setBuscar] = useState('');
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ nombre: '', celular: '', observaciones: '' });
   const [msg, setMsg] = useState('');
@@ -46,22 +45,6 @@ export function Participantes() {
     }
   }
 
-  async function vincular(e: FormEvent) {
-    e.preventDefault();
-    setError('');
-    try {
-      await api.post('/participantes/vincular', {
-        cadena_id: Number(link.cadena_id),
-        participante_id: Number(link.participante_id),
-        cantidad_puestos: Number(link.cantidad_puestos),
-        fraccion_total: Number(link.fraccion_total),
-      });
-      setMsg('Participante vinculado a la cadena');
-    } catch (err) {
-      fail(err, 'Error al vincular participante');
-    }
-  }
-
   function empezarEdicion(p: Participante) {
     setEditandoId(p.id);
     setEditForm({ nombre: p.nombre, celular: p.celular || '', observaciones: p.observaciones || '' });
@@ -89,6 +72,8 @@ export function Participantes() {
     }
   }
 
+  const filtrados = items.filter((p) => p.nombre.toLowerCase().includes(buscar.toLowerCase()));
+
   return (
     <div className="flex flex-col gap-6">
       <h2 className="font-display text-2xl font-bold text-text">Participantes</h2>
@@ -100,7 +85,7 @@ export function Participantes() {
         <form onSubmit={crear} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(Object.keys(form) as Array<keyof typeof form>).map((k) => (
             <div key={k}>
-              <Label>{k}</Label>
+              <Label>{k === 'nombre' ? 'Nombre' : k === 'celular' ? 'Celular' : 'Observaciones'}</Label>
               <Input value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
             </div>
           ))}
@@ -111,22 +96,16 @@ export function Participantes() {
       </Card>
 
       <Card>
-        <h3 className="mb-3 font-semibold text-text">Vincular a una cadena por ID</h3>
-        <form onSubmit={vincular} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {(Object.keys(link) as Array<keyof typeof link>).map((k) => (
-            <div key={k}>
-              <Label>{k}</Label>
-              <Input value={link[k]} onChange={(e) => setLink({ ...link, [k]: e.target.value })} />
-            </div>
-          ))}
-          <div className="flex items-end">
-            <Button type="submit">Vincular a cadena</Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card>
-        <h3 className="mb-3 font-semibold text-text">Pool de participantes</h3>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-semibold text-text">Pool de participantes ({items.length})</h3>
+          <input
+            type="search"
+            placeholder="Buscar por nombre..."
+            value={buscar}
+            onChange={(e) => setBuscar(e.target.value)}
+            className="w-56 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-text placeholder:text-text-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          />
+        </div>
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-left text-sm">
             <thead className="bg-surface-2 text-text-muted">
@@ -138,7 +117,7 @@ export function Participantes() {
               </tr>
             </thead>
             <tbody>
-              {items.map((p) => (
+              {filtrados.map((p) => (
                 <tr key={p.id} className="border-t border-border">
                   {editandoId === p.id ? (
                     <>
@@ -182,10 +161,10 @@ export function Participantes() {
                   )}
                 </tr>
               ))}
-              {!items.length && (
+              {!filtrados.length && (
                 <tr>
                   <td colSpan={4} className="px-3 py-4 text-center text-text-faint">
-                    Todavía no hay participantes.
+                    {items.length ? 'Sin resultados para esa búsqueda.' : 'Todavía no hay participantes.'}
                   </td>
                 </tr>
               )}

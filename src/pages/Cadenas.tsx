@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card';
 import { Input, Label, Select } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { Banner } from '../components/ui/Banner';
+import { ConfirmPopover } from '../components/ui/ConfirmPopover';
 import type { Cadena, Participante, PuestoCadena } from '../types';
 
 interface Jugador {
@@ -40,6 +41,10 @@ export function Cadenas() {
   const [puestoForm, setPuestoForm] = useState<Record<number, { numero_puesto: string; fraccion: string }>>({});
   const [editandoCadena, setEditandoCadena] = useState(false);
   const [editCadenaForm, setEditCadenaForm] = useState(FORM_INICIAL);
+  const [confirmacion, setConfirmacion] = useState<
+    { tipo: 'eliminar-cadena' } | { tipo: 'quitar-jugador'; jugador: Jugador } | { tipo: 'cerrar-sorteo' } | null
+  >(null);
+  const [confirmando, setConfirmando] = useState(false);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
 
@@ -171,29 +176,35 @@ export function Cadenas() {
     }
   }
 
-  async function eliminarCadena() {
+  async function ejecutarEliminarCadena() {
     if (!seleccion) return;
-    if (!window.confirm(`¿Eliminar "${seleccion.nombre} ${seleccion.anio}"? Esto borra jugadores, sorteo, pagos y entregas asociados.`)) return;
     setError('');
+    setConfirmando(true);
     try {
       await api.delete(`/cadenas/${seleccion.id}`);
       setMsg('Cadena eliminada');
       setSeleccionId(null);
+      setConfirmacion(null);
       await loadCadenas();
     } catch (err) {
       fail(err, 'Error al eliminar cadena');
+    } finally {
+      setConfirmando(false);
     }
   }
 
-  async function quitarJugador(jugador: Jugador) {
+  async function ejecutarQuitarJugador(jugador: Jugador) {
     if (!seleccionId) return;
-    if (!window.confirm(`¿Quitar a ${jugador.nombre} de esta cadena?`)) return;
     setError('');
+    setConfirmando(true);
     try {
       await api.delete(`/participantes/vincular/${seleccionId}/${jugador.participante_id}`);
+      setConfirmacion(null);
       await loadDetalle(seleccionId);
     } catch (err) {
       fail(err, 'Error al quitar jugador');
+    } finally {
+      setConfirmando(false);
     }
   }
 
@@ -208,15 +219,19 @@ export function Cadenas() {
     }
   }
 
-  async function cerrarSorteo() {
+  async function ejecutarCerrarSorteo() {
     if (!seleccionId) return;
     setError('');
+    setConfirmando(true);
     try {
       await api.post(`/cadenas/${seleccionId}/cerrar-sorteo`);
       setMsg('Sorteo cerrado, cadena activa');
+      setConfirmacion(null);
       await loadCadenas();
     } catch (err) {
       fail(err, 'Error al cerrar sorteo — revisa que todos los puestos sumen fracción completa');
+    } finally {
+      setConfirmando(false);
     }
   }
 
@@ -345,11 +360,11 @@ export function Cadenas() {
               <Button variant="ghost" onClick={empezarEdicionCadena}>
                 Editar cadena
               </Button>
-              <Button variant="ghost" onClick={eliminarCadena}>
+              <Button variant="danger" onClick={() => setConfirmacion({ tipo: 'eliminar-cadena' })}>
                 Eliminar cadena
               </Button>
               {seleccion.estado === 'PENDIENTE_SORTEO' && (
-                <Button onClick={cerrarSorteo} disabled={!puestosCompletos}>
+                <Button onClick={() => setConfirmacion({ tipo: 'cerrar-sorteo' })} disabled={!puestosCompletos}>
                   Cerrar sorteo y activar
                 </Button>
               )}
@@ -458,13 +473,13 @@ export function Cadenas() {
                               <span key={p.id} className="flex items-center gap-1 rounded-full bg-surface-3 px-2 py-0.5 text-xs">
                                 #{p.numero_puesto} ({p.fraccion})
                                 {seleccion.estado === 'PENDIENTE_SORTEO' && (
-                                  <button
+                                  <Button
+                                    variant="icon"
                                     onClick={() => deshacerPuesto(p.id)}
-                                    title="Deshacer este puesto"
-                                    className="text-text-faint hover:text-error"
+                                    aria-label={`Deshacer puesto ${p.numero_puesto} de ${j.nombre}`}
                                   >
                                     ×
-                                  </button>
+                                  </Button>
                                 )}
                               </span>
                             ))}
@@ -511,7 +526,7 @@ export function Cadenas() {
                             </div>
                           </td>
                           <td className="px-3 py-2">
-                            <Button variant="ghost" onClick={() => quitarJugador(j)}>
+                            <Button variant="ghost" onClick={() => setConfirmacion({ tipo: 'quitar-jugador', jugador: j })}>
                               Quitar
                             </Button>
                           </td>
@@ -532,6 +547,36 @@ export function Cadenas() {
           </div>
         </Card>
       )}
+
+      <ConfirmPopover
+        open={confirmacion?.tipo === 'eliminar-cadena'}
+        title="Eliminar cadena"
+        description={`¿Eliminar "${seleccion?.nombre} ${seleccion?.anio}"? Esto borra jugadores, sorteo, pagos y entregas asociados. No se puede deshacer.`}
+        confirmLabel="Eliminar"
+        danger
+        loading={confirmando}
+        onConfirm={ejecutarEliminarCadena}
+        onCancel={() => setConfirmacion(null)}
+      />
+      <ConfirmPopover
+        open={confirmacion?.tipo === 'quitar-jugador'}
+        title="Quitar jugador"
+        description={confirmacion?.tipo === 'quitar-jugador' ? `¿Quitar a ${confirmacion.jugador.nombre} de esta cadena?` : undefined}
+        confirmLabel="Quitar"
+        danger
+        loading={confirmando}
+        onConfirm={() => confirmacion?.tipo === 'quitar-jugador' && ejecutarQuitarJugador(confirmacion.jugador)}
+        onCancel={() => setConfirmacion(null)}
+      />
+      <ConfirmPopover
+        open={confirmacion?.tipo === 'cerrar-sorteo'}
+        title="Cerrar sorteo y activar"
+        description={`Se activará "${seleccion?.nombre} ${seleccion?.anio}" con ${maxPuestoAsignado} puesto(s). Ya no se podrán quitar jugadores ni deshacer puestos después de esto.`}
+        confirmLabel="Cerrar sorteo y activar"
+        loading={confirmando}
+        onConfirm={ejecutarCerrarSorteo}
+        onCancel={() => setConfirmacion(null)}
+      />
     </div>
   );
 }

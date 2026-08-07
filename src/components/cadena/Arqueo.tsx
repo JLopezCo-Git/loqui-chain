@@ -15,6 +15,7 @@ export function Arqueo({ cadenaId }: { cadenaId: number }) {
   const [otrasFuentes, setOtrasFuentes] = useState<{ etiqueta: string; monto: string }[]>([]);
   const [observaciones, setObservaciones] = useState('');
   const [historial, setHistorial] = useState<ArqueoCaja[]>([]);
+  const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -50,6 +51,7 @@ export function Arqueo({ cadenaId }: { cadenaId: number }) {
 
   async function guardar() {
     setError('');
+    setGuardando(true);
     try {
       await api.post('/arqueos', {
         cadena_id: cadenaId,
@@ -64,6 +66,8 @@ export function Arqueo({ cadenaId }: { cadenaId: number }) {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar el arqueo');
+    } finally {
+      setGuardando(false);
     }
   }
 
@@ -81,62 +85,6 @@ export function Arqueo({ cadenaId }: { cadenaId: number }) {
     <div className="flex flex-col gap-4">
       {error && <Banner kind="error">{error}</Banner>}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card>
-          <h4 className="mb-3 text-sm font-semibold text-text">Efectivo contado</h4>
-          <div className="flex flex-col gap-2">
-            {DENOMINACIONES.map((v) => (
-              <div key={v} className="flex items-center gap-2">
-                <span className="w-24 text-sm text-text-muted">{money(v)}</span>
-                <Input
-                  type="number"
-                  min={0}
-                  placeholder="cantidad"
-                  className="w-24"
-                  value={cantidades[v] ?? ''}
-                  onChange={(e) => setCantidades({ ...cantidades, [v]: e.target.value })}
-                />
-                <span className="text-sm text-text-faint">= {money(v * Number(cantidades[v] || 0))}</span>
-              </div>
-            ))}
-            <div className="mt-1 border-t border-border pt-2 text-sm font-semibold text-text">
-              Total efectivo: {money(efectivoContado)}
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <h4 className="mb-3 text-sm font-semibold text-text">Otras fuentes (cuentas, préstamos, gastos por reponer)</h4>
-          <div className="flex flex-col gap-2">
-            {otrasFuentes.map((f, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Input
-                  placeholder="Ej: Nequi, o 'Jhonny usó'"
-                  value={f.etiqueta}
-                  onChange={(e) => actualizarFuente(i, 'etiqueta', e.target.value)}
-                />
-                <Input
-                  type="number"
-                  placeholder="monto"
-                  className="w-32"
-                  value={f.monto}
-                  onChange={(e) => actualizarFuente(i, 'monto', e.target.value)}
-                />
-                <button onClick={() => quitarFuente(i)} className="text-text-faint hover:text-error" title="Quitar">
-                  ×
-                </button>
-              </div>
-            ))}
-            <Button variant="ghost" onClick={agregarFuente} className="self-start">
-              + Agregar fuente
-            </Button>
-            <div className="mt-1 border-t border-border pt-2 text-sm font-semibold text-text">
-              Total otras fuentes: {money(totalOtrasFuentes)}
-            </div>
-          </div>
-        </Card>
-      </div>
-
       <Card>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg bg-surface-2 p-3">
@@ -152,13 +100,74 @@ export function Arqueo({ cadenaId }: { cadenaId: number }) {
             <b className={`text-lg ${faltaReponer > 0 ? 'text-error' : 'text-success'}`}>{money(Math.abs(faltaReponer))}</b>
           </div>
         </div>
+      </Card>
 
-        <div className="mt-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card>
+          <h4 className="mb-3 text-sm font-semibold text-text">1. Efectivo contado</h4>
+          <div className="flex flex-col gap-2">
+            {DENOMINACIONES.map((v) => (
+              <div key={v} className="flex items-center gap-2">
+                <span className="w-24 text-sm text-text-muted">{money(v)}</span>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="cantidad"
+                  className="w-24"
+                  value={cantidades[v] ?? ''}
+                  onChange={(e) => setCantidades({ ...cantidades, [v]: e.target.value })}
+                  aria-label={`Cantidad de billetes de ${money(v)}`}
+                />
+                <span className="text-sm text-text-faint">= {money(v * Number(cantidades[v] || 0))}</span>
+              </div>
+            ))}
+            <div className="mt-1 border-t border-border pt-2 text-sm font-semibold text-text">
+              Total efectivo: {money(efectivoContado)}
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <h4 className="mb-3 text-sm font-semibold text-text">2. Otras fuentes (cuentas, préstamos, gastos por reponer)</h4>
+          <div className="flex flex-col gap-2">
+            {otrasFuentes.map((f, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Input
+                  placeholder="Ej: Nequi, o 'Jhonny usó'"
+                  value={f.etiqueta}
+                  onChange={(e) => actualizarFuente(i, 'etiqueta', e.target.value)}
+                  aria-label="Etiqueta de la fuente"
+                />
+                <Input
+                  type="number"
+                  placeholder="monto"
+                  className="w-32"
+                  value={f.monto}
+                  onChange={(e) => actualizarFuente(i, 'monto', e.target.value)}
+                  aria-label="Monto de la fuente"
+                />
+                <Button variant="icon" onClick={() => quitarFuente(i)} aria-label={`Quitar fuente ${f.etiqueta || i + 1}`}>
+                  ×
+                </Button>
+              </div>
+            ))}
+            <Button variant="ghost" onClick={agregarFuente} className="self-start">
+              + Agregar fuente
+            </Button>
+            <div className="mt-1 border-t border-border pt-2 text-sm font-semibold text-text">
+              Total otras fuentes: {money(totalOtrasFuentes)}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card>
+        <div>
           <Label>Observaciones (opcional)</Label>
           <Input value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
         </div>
 
-        <Button onClick={guardar} className="mt-3">
+        <Button onClick={guardar} loading={guardando} className="mt-3">
           Guardar arqueo
         </Button>
       </Card>

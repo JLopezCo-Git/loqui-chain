@@ -69,6 +69,7 @@ export interface Obligacion {
   estado: string;
   participante?: string;
   numero_quincena?: number;
+  fecha_limite_pago?: string;
 }
 
 export interface Entrega {
@@ -127,6 +128,12 @@ export interface ArqueoCaja {
   registrado_por: number | null;
   items: ArqueoItem[];
   faltaReponer: number;
+}
+
+export interface Atencion {
+  vencidas: Obligacion[];
+  proximaEntrega: Entrega | null;
+  arqueoFaltante: number | null;
 }
 
 export interface DashboardResumen {
