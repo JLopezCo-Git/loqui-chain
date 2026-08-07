@@ -133,6 +133,7 @@ export function Cadenas() {
         participante_id: jugador.participante_id,
         fraccion: Number(valores.fraccion || '1'),
       });
+      setPuestoForm({ ...puestoForm, [jugador.participante_id]: { numero_puesto: '', fraccion: '1' } });
       await loadDetalle(seleccionId);
     } catch (err) {
       fail(err, 'Error al asignar puesto');
@@ -155,7 +156,12 @@ export function Cadenas() {
     (p) => !jugadores.some((j) => j.participante_id === p.id),
   );
 
-  const puestosPorParticipante = new Map(puestos.map((p) => [p.participante_id, p]));
+  const puestosPorParticipante = new Map<number, PuestoCadena[]>();
+  for (const p of puestos) {
+    const lista = puestosPorParticipante.get(p.participante_id) || [];
+    lista.push(p);
+    puestosPorParticipante.set(p.participante_id, lista);
+  }
   const sumaFracciones: Record<number, number> = {};
   for (const p of puestos) sumaFracciones[p.numero_puesto] = (sumaFracciones[p.numero_puesto] || 0) + p.fraccion;
   const puestosCompletos =
@@ -296,55 +302,65 @@ export function Cadenas() {
               <thead className="bg-surface-2 text-text-muted">
                 <tr>
                   <th className="px-3 py-2 font-medium">Jugador</th>
-                  <th className="px-3 py-2 font-medium">Puesto asignado</th>
+                  <th className="px-3 py-2 font-medium">Puestos asignados</th>
                   {seleccion.estado === 'PENDIENTE_SORTEO' && <th className="px-3 py-2 font-medium">Asignar puesto (sorteo)</th>}
                 </tr>
               </thead>
               <tbody>
                 {jugadores.map((j) => {
-                  const puesto = puestosPorParticipante.get(j.participante_id);
+                  const puestosJugador = puestosPorParticipante.get(j.participante_id) || [];
+                  const totalFraccion = puestosJugador.reduce((sum, p) => sum + p.fraccion, 0);
                   return (
                     <tr key={j.id} className="border-t border-border">
                       <td className="px-3 py-2 text-text">{j.nombre}</td>
                       <td className="px-3 py-2 text-text-muted">
-                        {puesto ? `#${puesto.numero_puesto} (${puesto.fraccion})` : '— sin sorteo —'}
+                        {puestosJugador.length ? (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {puestosJugador.map((p) => (
+                              <span key={p.id} className="rounded-full bg-surface-3 px-2 py-0.5 text-xs">
+                                #{p.numero_puesto} ({p.fraccion})
+                              </span>
+                            ))}
+                            <span className="text-xs text-text-faint">= {totalFraccion} puesto(s)</span>
+                          </div>
+                        ) : (
+                          '— sin sorteo —'
+                        )}
                       </td>
                       {seleccion.estado === 'PENDIENTE_SORTEO' && (
                         <td className="px-3 py-2">
-                          {!puesto && (
-                            <div className="flex gap-2">
-                              <Input
-                                type="number"
-                                placeholder="# puesto"
-                                className="w-24"
-                                value={puestoForm[j.participante_id]?.numero_puesto ?? ''}
-                                onChange={(e) =>
-                                  setPuestoForm({
-                                    ...puestoForm,
-                                    [j.participante_id]: { ...puestoForm[j.participante_id], numero_puesto: e.target.value },
-                                  })
-                                }
-                              />
-                              <Select
-                                className="w-28"
-                                value={puestoForm[j.participante_id]?.fraccion ?? '1'}
-                                onChange={(e) =>
-                                  setPuestoForm({
-                                    ...puestoForm,
-                                    [j.participante_id]: { ...puestoForm[j.participante_id], fraccion: e.target.value },
-                                  })
-                                }
-                              >
-                                <option value="1">Completo</option>
-                                <option value="0.75">3/4</option>
-                                <option value="0.5">Medio</option>
-                                <option value="0.25">1/4</option>
-                              </Select>
-                              <Button variant="ghost" onClick={() => asignarPuesto(j)}>
-                                Asignar
-                              </Button>
-                            </div>
-                          )}
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              placeholder="# puesto"
+                              className="w-24"
+                              value={puestoForm[j.participante_id]?.numero_puesto ?? ''}
+                              onChange={(e) =>
+                                setPuestoForm({
+                                  ...puestoForm,
+                                  [j.participante_id]: { ...puestoForm[j.participante_id], numero_puesto: e.target.value },
+                                })
+                              }
+                            />
+                            <Select
+                              className="w-28"
+                              value={puestoForm[j.participante_id]?.fraccion ?? '1'}
+                              onChange={(e) =>
+                                setPuestoForm({
+                                  ...puestoForm,
+                                  [j.participante_id]: { ...puestoForm[j.participante_id], fraccion: e.target.value },
+                                })
+                              }
+                            >
+                              <option value="1">Completo</option>
+                              <option value="0.75">3/4</option>
+                              <option value="0.5">Medio</option>
+                              <option value="0.25">1/4</option>
+                            </Select>
+                            <Button variant="ghost" onClick={() => asignarPuesto(j)}>
+                              {puestosJugador.length ? 'Agregar otro puesto' : 'Asignar'}
+                            </Button>
+                          </div>
                         </td>
                       )}
                     </tr>

@@ -15,9 +15,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
 CREATE TABLE IF NOT EXISTS participantes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
-  documento TEXT,
   celular TEXT,
-  email TEXT,
   estado TEXT NOT NULL DEFAULT 'ACTIVO',
   observaciones TEXT,
   creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

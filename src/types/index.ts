@@ -27,9 +27,7 @@ export interface Cadena {
 export interface Participante {
   id: number;
   nombre: string;
-  documento: string | null;
   celular: string | null;
-  email: string | null;
   estado: string;
   observaciones: string | null;
   creado_en: string;

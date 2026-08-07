@@ -8,7 +8,7 @@ import { Banner } from '../components/ui/Banner';
 import { Table } from '../components/ui/Table';
 import type { Participante, TableRow } from '../types';
 
-const FORM_INICIAL = { nombre: '', documento: '', celular: '', email: '', observaciones: '' };
+const FORM_INICIAL = { nombre: '', celular: '', observaciones: '' };
 const LINK_INICIAL = { cadena_id: '', participante_id: '', cantidad_puestos: '1', fraccion_total: '1' };
 
 export function Participantes() {

@@ -9,14 +9,12 @@ router.use(requireAuth, requireAdmin);
 
 const participanteSchema = z.object({
   nombre: z.string().min(1),
-  documento: z.string().optional().nullable(),
   celular: z.string().optional().nullable(),
-  email: z.string().optional().nullable(),
   observaciones: z.string().optional().nullable()
 });
 
 router.get('/', (req, res) => {
-  res.json(db.prepare('SELECT * FROM participantes ORDER BY nombre').all());
+  res.json(db.prepare('SELECT id, nombre, celular, estado, observaciones, creado_en FROM participantes ORDER BY nombre').all());
 });
 
 router.post('/', (req, res) => {
@@ -25,11 +23,13 @@ router.post('/', (req, res) => {
 
   const p = parsed.data;
   const result = db.prepare(`
-    INSERT INTO participantes(nombre, documento, celular, email, observaciones)
-    VALUES (?,?,?,?,?)
-  `).run(p.nombre, p.documento || null, p.celular || null, p.email || null, p.observaciones || null);
+    INSERT INTO participantes(nombre, celular, observaciones)
+    VALUES (?,?,?)
+  `).run(p.nombre, p.celular || null, p.observaciones || null);
 
-  const item = db.prepare('SELECT * FROM participantes WHERE id = ?').get(result.lastInsertRowid);
+  const item = db
+    .prepare('SELECT id, nombre, celular, estado, observaciones, creado_en FROM participantes WHERE id = ?')
+    .get(result.lastInsertRowid);
   audit({ usuarioId: req.user.id, entidad: 'participantes', entidadId: item.id, accion: 'CREAR', after: item });
   res.status(201).json(item);
 });
@@ -69,7 +69,7 @@ router.post('/vincular', (req, res) => {
 
 router.get('/cadena/:cadenaId', (req, res) => {
   res.json(db.prepare(`
-    SELECT cp.*, p.nombre, p.celular, p.email
+    SELECT cp.*, p.nombre, p.celular
     FROM cadena_participantes cp
     JOIN participantes p ON p.id = cp.participante_id
     WHERE cp.cadena_id = ?
