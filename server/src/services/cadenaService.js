@@ -31,27 +31,28 @@ export function generarCalendario(cadenaId, fechaInicio) {
   db.prepare('UPDATE cadenas SET fecha_inicio = ? WHERE id = ?').run(fechaInicio, cadenaId);
 }
 
+// El número de puestos ya no se fija al crear la cadena -- se deduce de cuántos
+// puestos terminan asignados en el sorteo. Valida que cada número de puesto
+// usado (1..máximo asignado, sin huecos) sume fracción exactamente 1, y
+// devuelve ese máximo como el numero_puestos real de la cadena.
 export function validarSorteo(cadenaId) {
-  const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
-  if (!cadena) throw new Error('Cadena no existe');
-
   const puestos = db.prepare('SELECT * FROM puestos_cadena WHERE cadena_id = ?').all(cadenaId);
   if (!puestos.length) throw new Error('No hay sorteo registrado');
 
   const mapa = {};
+  let maxPuesto = 0;
   for (const p of puestos) {
-    if (p.numero_puesto < 1 || p.numero_puesto > cadena.numero_puestos) {
-      throw new Error(`Puesto fuera de rango: ${p.numero_puesto}`);
-    }
+    if (p.numero_puesto < 1) throw new Error(`Puesto inválido: ${p.numero_puesto}`);
     mapa[p.numero_puesto] = (mapa[p.numero_puesto] || 0) + p.fraccion;
+    if (p.numero_puesto > maxPuesto) maxPuesto = p.numero_puesto;
   }
 
   const faltantes = [];
-  for (let n = 1; n <= cadena.numero_puestos; n++) {
+  for (let n = 1; n <= maxPuesto; n++) {
     if (Math.round((mapa[n] || 0) * 10000) / 10000 !== 1) faltantes.push(n);
   }
   if (faltantes.length) throw new Error(`Puestos incompletos o excedidos: ${faltantes.join(', ')}`);
-  return true;
+  return maxPuesto;
 }
 
 // Genera las obligaciones (una por quincena) y la entrega (en la quincena de su turno)
@@ -89,9 +90,12 @@ export function generarObligacionesParaPuesto(cadenaId, puesto) {
 // para todos los puestos, y activa la cadena. Un solo paso -- en la práctica el
 // sorteo físico, el calendario y la activación son un mismo evento.
 export function cerrarSorteoYActivar(cadenaId) {
-  validarSorteo(cadenaId);
+  const numeroPuestos = validarSorteo(cadenaId);
 
   const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
+  db.prepare('UPDATE cadenas SET numero_puestos = ?, valor_puesto_total = ? WHERE id = ?')
+    .run(numeroPuestos, cadena.valor_aporte_quincenal * numeroPuestos, cadenaId);
+
   let quincenas = db.prepare('SELECT * FROM quincenas WHERE cadena_id = ?').all(cadenaId);
   if (!quincenas.length) {
     if (!cadena.fecha_inicio) throw new Error('La cadena no tiene fecha de inicio definida');

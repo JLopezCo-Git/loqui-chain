@@ -19,7 +19,6 @@ const FORM_INICIAL = {
   nombre: '',
   anio: new Date().getFullYear(),
   valor_aporte_quincenal: 0,
-  numero_puestos: 20,
   fecha_inicio: '',
   cadena_origen_id: '',
 };
@@ -81,7 +80,6 @@ export function Cadenas() {
         nombre: form.nombre,
         anio: Number(form.anio),
         valor_aporte_quincenal: Number(form.valor_aporte_quincenal),
-        numero_puestos: Number(form.numero_puestos),
         fecha_inicio: form.fecha_inicio,
         cadena_origen_id: form.cadena_origen_id ? Number(form.cadena_origen_id) : null,
       });
@@ -149,7 +147,6 @@ export function Cadenas() {
       nombre: seleccion.nombre,
       anio: seleccion.anio,
       valor_aporte_quincenal: seleccion.valor_aporte_quincenal,
-      numero_puestos: seleccion.numero_puestos,
       fecha_inicio: seleccion.fecha_inicio || '',
       cadena_origen_id: '',
     });
@@ -164,7 +161,6 @@ export function Cadenas() {
         nombre: editCadenaForm.nombre,
         anio: Number(editCadenaForm.anio),
         valor_aporte_quincenal: Number(editCadenaForm.valor_aporte_quincenal),
-        numero_puestos: Number(editCadenaForm.numero_puestos),
         fecha_inicio: editCadenaForm.fecha_inicio,
       });
       setMsg('Cadena actualizada');
@@ -235,10 +231,16 @@ export function Cadenas() {
     puestosPorParticipante.set(p.participante_id, lista);
   }
   const sumaFracciones: Record<number, number> = {};
-  for (const p of puestos) sumaFracciones[p.numero_puesto] = (sumaFracciones[p.numero_puesto] || 0) + p.fraccion;
+  let maxPuestoAsignado = 0;
+  for (const p of puestos) {
+    sumaFracciones[p.numero_puesto] = (sumaFracciones[p.numero_puesto] || 0) + p.fraccion;
+    if (p.numero_puesto > maxPuestoAsignado) maxPuestoAsignado = p.numero_puesto;
+  }
+  // El número de puestos se deduce del sorteo: el más alto asignado, siempre
+  // que 1..ese máximo estén completos (sin huecos) y sumen fracción 1 cada uno.
   const puestosCompletos =
-    seleccion != null &&
-    Array.from({ length: seleccion.numero_puestos }, (_, i) => i + 1).every(
+    maxPuestoAsignado > 0 &&
+    Array.from({ length: maxPuestoAsignado }, (_, i) => i + 1).every(
       (n) => Math.round((sumaFracciones[n] || 0) * 10000) / 10000 === 1,
     );
 
@@ -258,14 +260,6 @@ export function Cadenas() {
           <div>
             <Label>Año</Label>
             <Input type="number" value={form.anio} onChange={(e) => setForm({ ...form, anio: Number(e.target.value) })} />
-          </div>
-          <div>
-            <Label>Número puestos</Label>
-            <Input
-              type="number"
-              value={form.numero_puestos}
-              onChange={(e) => setForm({ ...form, numero_puestos: Number(e.target.value) })}
-            />
           </div>
           <div>
             <Label>Valor puesto quincenal (completo)</Label>
@@ -300,6 +294,9 @@ export function Cadenas() {
             <Button type="submit">Crear cadena</Button>
           </div>
         </form>
+        <p className="mt-3 text-xs text-text-faint">
+          No se pide el número de puestos: se define solo, según cuántos jugadores y fracciones asignes en el sorteo.
+        </p>
       </Card>
 
       <Card>
@@ -319,7 +316,8 @@ export function Cadenas() {
                   {c.nombre} {c.anio}
                 </span>
                 <span className="flex items-center gap-3 text-text-muted">
-                  {money(c.valor_aporte_quincenal)}/quincena · {c.numero_puestos} puestos
+                  {money(c.valor_aporte_quincenal)}/quincena ·{' '}
+                  {c.numero_puestos > 0 ? `${c.numero_puestos} puestos` : 'puestos por definir'}
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badge.clase}`}>{badge.texto}</span>
                 </span>
               </button>
@@ -332,9 +330,17 @@ export function Cadenas() {
       {seleccion && (
         <Card>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-semibold text-text">
-              {seleccion.nombre} {seleccion.anio}
-            </h3>
+            <div>
+              <h3 className="font-semibold text-text">
+                {seleccion.nombre} {seleccion.anio}
+              </h3>
+              {seleccion.estado === 'PENDIENTE_SORTEO' && maxPuestoAsignado > 0 && (
+                <p className="text-xs text-text-faint">
+                  {maxPuestoAsignado} puesto{maxPuestoAsignado === 1 ? '' : 's'} detectado{maxPuestoAsignado === 1 ? '' : 's'} en el sorteo
+                  {puestosCompletos ? ', todos completos' : ' — todavía hay puestos incompletos'}.
+                </p>
+              )}
+            </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={empezarEdicionCadena}>
                 Editar cadena
@@ -354,8 +360,8 @@ export function Cadenas() {
             <div className="mb-4 rounded-lg border border-border p-3">
               {seleccion.estado === 'ACTIVA' && (
                 <Banner kind="error">
-                  Esta cadena ya está activa: cambiar el valor de puesto o el número de puestos NO recalcula las
-                  obligaciones/entregas ya generadas.
+                  Esta cadena ya está activa: cambiar el valor de puesto NO recalcula las obligaciones/entregas ya
+                  generadas.
                 </Banner>
               )}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -369,14 +375,6 @@ export function Cadenas() {
                     type="number"
                     value={editCadenaForm.anio}
                     onChange={(e) => setEditCadenaForm({ ...editCadenaForm, anio: Number(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <Label>Número puestos</Label>
-                  <Input
-                    type="number"
-                    value={editCadenaForm.numero_puestos}
-                    onChange={(e) => setEditCadenaForm({ ...editCadenaForm, numero_puestos: Number(e.target.value) })}
                   />
                 </div>
                 <div>

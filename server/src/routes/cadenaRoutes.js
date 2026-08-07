@@ -12,7 +12,9 @@ const cadenaSchema = z.object({
   nombre: z.string().min(1),
   anio: z.number().int(),
   valor_aporte_quincenal: z.number().positive(),
-  numero_puestos: z.number().int().positive(),
+  // No se pide al crear: se deduce de cuántos puestos terminan asignados en
+  // el sorteo (cerrarSorteoYActivar la fija). Editable a mano si hace falta.
+  numero_puestos: z.number().int().min(0).optional(),
   fecha_inicio: z.string().min(1),
   fecha_fin: z.string().optional().nullable(),
   cadena_origen_id: z.number().int().optional().nullable()
@@ -35,7 +37,9 @@ router.post('/', (req, res) => {
   }
 
   const valor = origen?.valor_aporte_quincenal ?? c.valor_aporte_quincenal;
-  const puestos = origen?.numero_puestos ?? c.numero_puestos;
+  // numero_puestos nunca se hereda del origen -- se deduce del sorteo de ESTA
+  // cadena (puede terminar con más o menos jugadores que la anterior).
+  const puestos = c.numero_puestos ?? 0;
   const total = valor * puestos;
 
   const result = db.prepare(`

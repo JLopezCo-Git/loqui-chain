@@ -34,7 +34,11 @@ router.post('/', (req, res) => {
   const p = parsed.data;
   const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(p.cadena_id);
   if (!cadena) return res.status(404).json({ error: 'Cadena no existe' });
-  if (p.numero_puesto > cadena.numero_puestos) return res.status(400).json({ error: 'Puesto fuera de rango' });
+  // Mientras se arma el sorteo el número de puestos todavía no está fijo (se
+  // deduce al cerrar). Una vez ACTIVA, el rango ya quedó fijo por cerrarSorteoYActivar.
+  if (cadena.estado === 'ACTIVA' && p.numero_puesto > cadena.numero_puestos) {
+    return res.status(400).json({ error: 'Puesto fuera de rango' });
+  }
 
   const total = db.prepare(`
     SELECT COALESCE(SUM(fraccion), 0) total
