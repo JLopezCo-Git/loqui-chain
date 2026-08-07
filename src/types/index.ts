@@ -105,6 +105,30 @@ export interface GrillaCadena {
   caja: number;
 }
 
+export interface Denominacion {
+  valor: number;
+  cantidad: number;
+}
+
+export interface ArqueoItem {
+  id: number;
+  etiqueta: string;
+  monto: number;
+}
+
+export interface ArqueoCaja {
+  id: number;
+  cadena_id: number;
+  fecha: string;
+  esperado: number;
+  efectivo_contado: number;
+  denominaciones: Denominacion[] | null;
+  observaciones: string | null;
+  registrado_por: number | null;
+  items: ArqueoItem[];
+  faltaReponer: number;
+}
+
 export interface DashboardResumen {
   cadenasTotal: number;
   cadenasActivas: number;

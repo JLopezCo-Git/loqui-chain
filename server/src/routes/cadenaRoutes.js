@@ -96,12 +96,16 @@ router.patch('/:id', (req, res) => {
 });
 
 // Elimina la cadena y todo lo asociado (jugadores vinculados, puestos,
-// calendario, obligaciones, pagos, entregas, movimientos de caja).
+// calendario, obligaciones, pagos, entregas, movimientos de caja, arqueos).
 router.delete('/:id', (req, res) => {
   const existente = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id);
   if (!existente) return res.status(404).json({ error: 'Cadena no existe' });
 
   const tx = db.transaction(() => {
+    const arqueoIds = db.prepare('SELECT id FROM arqueos_caja WHERE cadena_id = ?').all(req.params.id).map((r) => r.id);
+    const deleteItems = db.prepare('DELETE FROM arqueo_items WHERE arqueo_id = ?');
+    for (const id of arqueoIds) deleteItems.run(id);
+    db.prepare('DELETE FROM arqueos_caja WHERE cadena_id = ?').run(req.params.id);
     db.prepare('DELETE FROM caja_movimientos WHERE cadena_id = ?').run(req.params.id);
     db.prepare('DELETE FROM pagos WHERE cadena_id = ?').run(req.params.id);
     db.prepare('DELETE FROM obligaciones WHERE cadena_id = ?').run(req.params.id);

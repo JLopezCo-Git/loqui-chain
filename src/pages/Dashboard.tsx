@@ -5,6 +5,7 @@ import { Card } from '../components/ui/Card';
 import { StatCard } from '../components/ui/StatCard';
 import { Select } from '../components/ui/Field';
 import { CadenaGrid } from '../components/cadena/CadenaGrid';
+import { Arqueo } from '../components/cadena/Arqueo';
 import type { Cadena, DashboardResumen } from '../types';
 
 export function Dashboard() {
@@ -59,6 +60,13 @@ export function Dashboard() {
           <p className="text-sm text-text-faint">No hay ninguna cadena activa todavía.</p>
         )}
       </Card>
+
+      {cadenaId && (
+        <Card>
+          <h3 className="mb-4 font-semibold text-text">Arqueo de caja</h3>
+          <Arqueo cadenaId={cadenaId} />
+        </Card>
+      )}
     </div>
   );
 }

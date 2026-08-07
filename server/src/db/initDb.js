@@ -160,6 +160,27 @@ CREATE TABLE IF NOT EXISTS auditoria (
   FOREIGN KEY(usuario_id) REFERENCES usuarios(id)
 );
 
+CREATE TABLE IF NOT EXISTS arqueos_caja (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cadena_id INTEGER NOT NULL,
+  fecha TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  esperado REAL NOT NULL,
+  efectivo_contado REAL NOT NULL,
+  denominaciones TEXT,
+  observaciones TEXT,
+  registrado_por INTEGER,
+  FOREIGN KEY(cadena_id) REFERENCES cadenas(id),
+  FOREIGN KEY(registrado_por) REFERENCES usuarios(id)
+);
+
+CREATE TABLE IF NOT EXISTS arqueo_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arqueo_id INTEGER NOT NULL,
+  etiqueta TEXT NOT NULL,
+  monto REAL NOT NULL,
+  FOREIGN KEY(arqueo_id) REFERENCES arqueos_caja(id)
+);
+
 CREATE TABLE IF NOT EXISTS plantillas_cadena (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,

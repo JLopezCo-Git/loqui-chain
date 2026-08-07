@@ -16,6 +16,7 @@ import pagoRoutes from './routes/pagoRoutes.js';
 import entregaRoutes from './routes/entregaRoutes.js';
 import reporteRoutes from './routes/reporteRoutes.js';
 import iaRoutes from './routes/iaRoutes.js';
+import arqueoRoutes from './routes/arqueoRoutes.js';
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ app.use('/api/pagos', pagoRoutes);
 app.use('/api/entregas', entregaRoutes);
 app.use('/api/reportes', reporteRoutes);
 app.use('/api/ia', iaRoutes);
+app.use('/api/arqueos', arqueoRoutes);
 
 if (isProduction) {
   const distPath = path.join(__dirname, '../../dist');
