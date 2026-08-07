@@ -7,7 +7,7 @@ export interface User {
   rol: Rol;
 }
 
-export type EstadoCadena = 'BORRADOR' | 'PENDIENTE_SORTEO' | 'SORTEO_REGISTRADO' | 'ACTIVA';
+export type EstadoCadena = 'BORRADOR' | 'PENDIENTE_SORTEO' | 'ACTIVA';
 
 export interface Cadena {
   id: number;
@@ -88,6 +88,23 @@ export interface Entrega {
   observaciones: string | null;
   participante?: string;
   numero_quincena?: number;
+}
+
+export interface GrillaFila {
+  puesto_id: number;
+  numero_puesto: number;
+  fraccion: number;
+  participante_id: number;
+  participante: string;
+  celdas: (Obligacion | null)[];
+  entrega: Entrega | null;
+}
+
+export interface GrillaCadena {
+  cadena: Cadena;
+  quincenas: { id: number; numero_quincena: number; fecha_programada: string; fecha_limite_pago: string; estado: string }[];
+  filas: GrillaFila[];
+  caja: number;
 }
 
 export interface DashboardResumen {

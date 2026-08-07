@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
-import { generarCalendario, confirmarSorteo, copiarCadena } from '../services/cadenaService.js';
+import { cerrarSorteoYActivar, copiarCadena } from '../services/cadenaService.js';
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -13,7 +13,7 @@ const cadenaSchema = z.object({
   anio: z.number().int(),
   valor_aporte_quincenal: z.number().positive(),
   numero_puestos: z.number().int().positive(),
-  fecha_inicio: z.string().optional().nullable(),
+  fecha_inicio: z.string().min(1),
   fecha_fin: z.string().optional().nullable(),
   cadena_origen_id: z.number().int().optional().nullable()
 });
@@ -56,37 +56,14 @@ router.get('/:id', (req, res) => {
   res.json(c);
 });
 
-router.post('/:id/calendario', (req, res) => {
+router.post('/:id/cerrar-sorteo', (req, res) => {
   try {
-    const fecha = req.body.fecha_inicio;
-    if (!fecha) return res.status(400).json({ error: 'fecha_inicio requerida' });
-    generarCalendario(Number(req.params.id), fecha);
-    audit({ usuarioId: req.user.id, entidad: 'cadenas', entidadId: Number(req.params.id), accion: 'GENERAR_CALENDARIO', after: { fecha_inicio: fecha } });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
-router.post('/:id/confirmar-sorteo', (req, res) => {
-  try {
-    confirmarSorteo(Number(req.params.id));
-    audit({ usuarioId: req.user.id, entidad: 'cadenas', entidadId: Number(req.params.id), accion: 'CONFIRMAR_SORTEO' });
+    cerrarSorteoYActivar(Number(req.params.id));
+    audit({ usuarioId: req.user.id, entidad: 'cadenas', entidadId: Number(req.params.id), accion: 'CERRAR_SORTEO_Y_ACTIVAR' });
     res.json(db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id));
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
-});
-
-router.post('/:id/activar', (req, res) => {
-  const c = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id);
-  if (!c) return res.status(404).json({ error: 'Cadena no existe' });
-  if (!['SORTEO_REGISTRADO', 'ACTIVA'].includes(c.estado)) return res.status(400).json({ error: 'Debe confirmar sorteo antes de activar' });
-
-  db.prepare("UPDATE cadenas SET estado = 'ACTIVA' WHERE id = ?").run(req.params.id);
-  const after = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id);
-  audit({ usuarioId: req.user.id, entidad: 'cadenas', entidadId: after.id, accion: 'ACTIVAR', before: c, after });
-  res.json(after);
 });
 
 export default router;

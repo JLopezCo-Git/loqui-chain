@@ -28,11 +28,13 @@ Modelo en `server/src/db/initDb.js`, lógica de negocio en `server/src/services/
 
 - **cadenas**: ciclo de vida `BORRADOR → PENDIENTE_SORTEO → SORTEO_REGISTRADO → ACTIVA`. `valor_puesto_total = valor_aporte_quincenal * numero_puestos`. Puede clonarse desde una cadena origen (`cadena_origen_id`, `copiarCadena()`).
 - **participantes** y **cadena_participantes**: un participante puede vincularse a varias cadenas, con fracción de puesto.
-- **puestos_cadena**: resultado del sorteo físico con balotas — cada puesto puede repartirse en fracciones (completo/medio/cuarto) que deben sumar exactamente 1 (`validarSorteo()`).
-- **quincenas / obligaciones / pagos**: al confirmar el sorteo (`confirmarSorteo()`) se genera el calendario de quincenas (si no existe) y una obligación de pago por participante y quincena. Los pagos actualizan `saldo_pendiente` y el estado (`PENDIENTE/PARCIAL/PAGADA`).
+- **puestos_cadena**: resultado del sorteo físico con balotas — cada puesto puede repartirse en fracciones (completo/3-4/medio/cuarto) que deben sumar exactamente 1 (`validarSorteo()`). El número de puesto **es** la quincena de entrega (`numero_puesto === numero_quincena`), no son conceptos separados.
+- **quincenas / obligaciones / pagos**: `cerrarSorteoYActivar()` (`cadenaService.js`) colapsa en un solo paso lo que antes eran tres endpoints (generar calendario, confirmar sorteo, activar) — genera el calendario si falta (usa `fecha_inicio`, ahora obligatoria al crear la cadena), valida que los puestos sumen 1, genera las obligaciones/entregas y activa la cadena. `generarObligacionesParaPuesto()` es la pieza reutilizable: la usa tanto el cierre de sorteo como `sorteoRoutes.js` cuando se asigna un puesto a una cadena ya `ACTIVA` (obligaciones retroactivas, caso borde). Los pagos actualizan `saldo_pendiente` y el estado (`PENDIENTE/PARCIAL/PAGADA`).
 - **entregas**: una por puesto y quincena, con el turno de entrega calculado por `numero_puesto === numero_quincena`. Registrar una entrega valida que no exceda `saldoCaja()`.
 - **caja_movimientos**: libro de entradas (pagos) y salidas (entregas) por cadena; `saldoCaja()` es la suma `entrada - salida`.
 - **auditoria**: cada mutación relevante pasa por `auditService.audit()` con antes/después.
+
+Modelo de armado de una cadena, alineado a cómo se juega en la práctica (ver `Cadena2026.xlsx` de referencia): los participantes son un pool recurrente entre cadenas (`copiarCadena()` clona la lista de jugadores de una cadena origen a una nueva, vía `cadena_origen_id` al crear); el sorteo es un solo evento (asignar puesto a cada jugador) que la UI (`src/pages/Cadenas.tsx`) expone como un único flujo: crear/clonar → agregar o quitar jugadores → asignar puestos → "cerrar sorteo y activar". El dashboard (`src/components/cadena/CadenaGrid.tsx`) muestra la cadena activa como grilla participante×quincena, con click-to-pay/entregar, igual que el Excel.
 
 ## 5. Agente de reglas (`server/src/routes/iaRoutes.js`)
 

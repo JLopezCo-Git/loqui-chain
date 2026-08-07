@@ -3,23 +3,22 @@ import { api } from '../utils/api';
 import { money } from '../utils/money';
 import { Card } from '../components/ui/Card';
 import { StatCard } from '../components/ui/StatCard';
-import type { DashboardResumen } from '../types';
-
-const PASOS = [
-  'Crear cadena.',
-  'Crear/vincular participantes.',
-  'Generar calendario.',
-  'Registrar sorteo físico con balotas.',
-  'Confirmar sorteo.',
-  'Activar cadena.',
-  'Registrar pagos y entregas.',
-];
+import { Select } from '../components/ui/Field';
+import { CadenaGrid } from '../components/cadena/CadenaGrid';
+import type { Cadena, DashboardResumen } from '../types';
 
 export function Dashboard() {
   const [data, setData] = useState<DashboardResumen | null>(null);
+  const [cadenasActivas, setCadenasActivas] = useState<Cadena[]>([]);
+  const [cadenaId, setCadenaId] = useState<number | null>(null);
 
   useEffect(() => {
     api.get<DashboardResumen>('/reportes/dashboard').then(setData);
+    api.get<Cadena[]>('/cadenas').then((cadenas) => {
+      const activas = cadenas.filter((c) => c.estado === 'ACTIVA');
+      setCadenasActivas(activas);
+      if (activas.length) setCadenaId(activas[0].id);
+    });
   }, []);
 
   if (!data) return <p className="text-text-muted">Cargando...</p>;
@@ -37,12 +36,28 @@ export function Dashboard() {
       </div>
 
       <Card>
-        <h3 className="mb-3 font-semibold text-text">Flujo correcto</h3>
-        <ol className="list-decimal space-y-1 pl-5 text-sm text-text-muted">
-          {PASOS.map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-        </ol>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-semibold text-text">Cadena vigente</h3>
+          {cadenasActivas.length > 1 && (
+            <Select
+              value={cadenaId ?? ''}
+              onChange={(e) => setCadenaId(Number(e.target.value))}
+              className="w-auto"
+            >
+              {cadenasActivas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre} {c.anio}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
+
+        {cadenaId ? (
+          <CadenaGrid cadenaId={cadenaId} />
+        ) : (
+          <p className="text-sm text-text-faint">No hay ninguna cadena activa todavía.</p>
+        )}
       </Card>
     </div>
   );

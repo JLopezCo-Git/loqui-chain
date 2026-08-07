@@ -54,45 +54,56 @@ export function validarSorteo(cadenaId) {
   return true;
 }
 
-export function confirmarSorteo(cadenaId) {
-  validarSorteo(cadenaId);
-
+// Genera las obligaciones (una por quincena) y la entrega (en la quincena de su turno)
+// para UN puesto ya asignado. Idempotente: no duplica si ya existen para alguna quincena.
+// Se usa tanto al confirmar el sorteo completo como al agregar un jugador a una cadena
+// que ya tiene calendario generado (cadena ya activa/con sorteo confirmado).
+export function generarObligacionesParaPuesto(cadenaId, puesto) {
   const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
-  let quincenas = db.prepare('SELECT * FROM quincenas WHERE cadena_id = ? ORDER BY numero_quincena').all(cadenaId);
-  if (!quincenas.length) {
-    if (!cadena.fecha_inicio) throw new Error('Debe generar calendario o definir fecha inicio');
-    generarCalendario(cadenaId, cadena.fecha_inicio);
-    quincenas = db.prepare('SELECT * FROM quincenas WHERE cadena_id = ? ORDER BY numero_quincena').all(cadenaId);
-  }
-
-  db.prepare('UPDATE puestos_cadena SET confirmado = 1 WHERE cadena_id = ?').run(cadenaId);
-
-  const puestos = db.prepare('SELECT * FROM puestos_cadena WHERE cadena_id = ?').all(cadenaId);
-  const existsOb = db.prepare('SELECT id FROM obligaciones WHERE cadena_id = ? AND quincena_id = ? LIMIT 1');
+  const quincenas = db.prepare('SELECT * FROM quincenas WHERE cadena_id = ? ORDER BY numero_quincena').all(cadenaId);
+  const existsOb = db.prepare('SELECT id FROM obligaciones WHERE cadena_id = ? AND quincena_id = ? AND puesto_id = ? LIMIT 1');
   const insertOb = db.prepare(`
     INSERT INTO obligaciones(cadena_id, quincena_id, participante_id, puesto_id, valor_esperado, saldo_pendiente, estado)
     VALUES (?,?,?,?,?,?,?)
   `);
+  const existsEntrega = db.prepare('SELECT id FROM entregas WHERE cadena_id = ? AND quincena_id = ? AND puesto_id = ? LIMIT 1');
   const insertEntrega = db.prepare(`
     INSERT INTO entregas(cadena_id, quincena_id, puesto_id, participante_id, valor_esperado, fecha_programada, estado)
     VALUES (?,?,?,?,?,?,?)
   `);
 
   for (const q of quincenas) {
-    if (!existsOb.get(cadenaId, q.id)) {
-      for (const p of puestos) {
-        const valor = cadena.valor_aporte_quincenal * p.fraccion;
-        insertOb.run(cadenaId, q.id, p.participante_id, p.id, valor, valor, 'PENDIENTE');
-      }
-      const turno = puestos.filter(p => p.numero_puesto === q.numero_quincena);
-      for (const p of turno) {
-        const valorEntrega = cadena.valor_aporte_quincenal * cadena.numero_puestos * p.fraccion;
-        insertEntrega.run(cadenaId, q.id, p.id, p.participante_id, valorEntrega, q.fecha_programada, 'PROGRAMADA');
-      }
+    if (!existsOb.get(cadenaId, q.id, puesto.id)) {
+      const valor = cadena.valor_aporte_quincenal * puesto.fraccion;
+      insertOb.run(cadenaId, q.id, puesto.participante_id, puesto.id, valor, valor, 'PENDIENTE');
+    }
+    if (puesto.numero_puesto === q.numero_quincena && !existsEntrega.get(cadenaId, q.id, puesto.id)) {
+      const valorEntrega = cadena.valor_aporte_quincenal * cadena.numero_puestos * puesto.fraccion;
+      insertEntrega.run(cadenaId, q.id, puesto.id, puesto.participante_id, valorEntrega, q.fecha_programada, 'PROGRAMADA');
     }
   }
+}
 
-  db.prepare("UPDATE cadenas SET estado = 'SORTEO_REGISTRADO' WHERE id = ?").run(cadenaId);
+// Cierra el sorteo: genera el calendario si aún no existe (usa fecha_inicio de la
+// cadena), valida que los puestos sumen fracción 1, genera obligaciones/entregas
+// para todos los puestos, y activa la cadena. Un solo paso -- en la práctica el
+// sorteo físico, el calendario y la activación son un mismo evento.
+export function cerrarSorteoYActivar(cadenaId) {
+  validarSorteo(cadenaId);
+
+  const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
+  let quincenas = db.prepare('SELECT * FROM quincenas WHERE cadena_id = ?').all(cadenaId);
+  if (!quincenas.length) {
+    if (!cadena.fecha_inicio) throw new Error('La cadena no tiene fecha de inicio definida');
+    generarCalendario(cadenaId, cadena.fecha_inicio);
+  }
+
+  db.prepare('UPDATE puestos_cadena SET confirmado = 1 WHERE cadena_id = ?').run(cadenaId);
+
+  const puestos = db.prepare('SELECT * FROM puestos_cadena WHERE cadena_id = ?').all(cadenaId);
+  for (const p of puestos) generarObligacionesParaPuesto(cadenaId, p);
+
+  db.prepare("UPDATE cadenas SET estado = 'ACTIVA' WHERE id = ?").run(cadenaId);
 }
 
 export function copiarCadena(origenId, nuevaCadenaId) {

@@ -15,6 +15,45 @@ router.get('/dashboard', (req, res) => {
   res.json({ cadenasTotal, cadenasActivas, cajaGlobal, pendienteGlobal, entregasPendientes });
 });
 
+// Vista tipo grilla (participante x quincena) para ver de un vistazo cómo va
+// la cadena -- equivalente a la hoja de cálculo con la que se lleva hoy.
+router.get('/cadena/:cadenaId/grilla', (req, res) => {
+  const cadenaId = Number(req.params.cadenaId);
+  const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
+  if (!cadena) return res.status(404).json({ error: 'Cadena no existe' });
+
+  const quincenas = db.prepare('SELECT * FROM quincenas WHERE cadena_id = ? ORDER BY numero_quincena').all(cadenaId);
+  const puestos = db.prepare(`
+    SELECT pc.*, p.nombre participante
+    FROM puestos_cadena pc
+    JOIN participantes p ON p.id = pc.participante_id
+    WHERE pc.cadena_id = ?
+    ORDER BY pc.numero_puesto, pc.fraccion DESC
+  `).all(cadenaId);
+
+  const obligaciones = db.prepare('SELECT * FROM obligaciones WHERE cadena_id = ?').all(cadenaId);
+  const obligacionesPorPuesto = new Map();
+  for (const o of obligaciones) {
+    if (!obligacionesPorPuesto.has(o.puesto_id)) obligacionesPorPuesto.set(o.puesto_id, new Map());
+    obligacionesPorPuesto.get(o.puesto_id).set(o.quincena_id, o);
+  }
+
+  const entregas = db.prepare('SELECT * FROM entregas WHERE cadena_id = ?').all(cadenaId);
+  const entregaPorPuesto = new Map(entregas.map((e) => [e.puesto_id, e]));
+
+  const filas = puestos.map((puesto) => ({
+    puesto_id: puesto.id,
+    numero_puesto: puesto.numero_puesto,
+    fraccion: puesto.fraccion,
+    participante_id: puesto.participante_id,
+    participante: puesto.participante,
+    celdas: quincenas.map((q) => obligacionesPorPuesto.get(puesto.id)?.get(q.id) || null),
+    entrega: entregaPorPuesto.get(puesto.id) || null
+  }));
+
+  res.json({ cadena, quincenas, filas, caja: saldoCaja(cadenaId) });
+});
+
 router.get('/cadena/:cadenaId', (req, res) => {
   const cadenaId = Number(req.params.cadenaId);
   const resumen = {

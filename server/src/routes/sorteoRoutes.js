@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
+import { generarObligacionesParaPuesto } from '../services/cadenaService.js';
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -50,6 +51,13 @@ router.post('/', (req, res) => {
 
   const item = db.prepare('SELECT * FROM puestos_cadena WHERE id = ?').get(result.lastInsertRowid);
   audit({ usuarioId: req.user.id, entidad: 'puestos_cadena', entidadId: item.id, accion: 'REGISTRAR_SORTEO', after: item, motivo: p.motivo });
+
+  // Si la cadena ya está activa (calendario ya generado), este puesto llega
+  // "tarde" -- generarle de una vez sus obligaciones y, si le toca, su entrega.
+  if (cadena.estado === 'ACTIVA') {
+    generarObligacionesParaPuesto(p.cadena_id, item);
+  }
+
   res.status(201).json(item);
 });
 
