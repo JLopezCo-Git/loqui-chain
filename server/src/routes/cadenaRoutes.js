@@ -66,4 +66,53 @@ router.post('/:id/cerrar-sorteo', (req, res) => {
   }
 });
 
+// Editar cadena en cualquier estado. Si cambia valor_aporte_quincenal o
+// numero_puestos en una cadena ya ACTIVA, las obligaciones/entregas ya
+// generadas NO se recalculan -- puede descuadrar montos ya calculados,
+// es responsabilidad de quien edita revisarlo (ver docs/ARCHITECTURE.md).
+router.patch('/:id', (req, res) => {
+  const existente = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id);
+  if (!existente) return res.status(404).json({ error: 'Cadena no existe' });
+
+  const parsed = cadenaSchema.omit({ cadena_origen_id: true }).partial().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const c = { ...existente, ...parsed.data };
+  const valor_puesto_total = c.valor_aporte_quincenal * c.numero_puestos;
+
+  db.prepare(`
+    UPDATE cadenas
+    SET nombre = ?, anio = ?, valor_aporte_quincenal = ?, numero_puestos = ?, valor_puesto_total = ?, fecha_inicio = ?, fecha_fin = ?
+    WHERE id = ?
+  `).run(c.nombre, c.anio, c.valor_aporte_quincenal, c.numero_puestos, valor_puesto_total, c.fecha_inicio || null, c.fecha_fin || null, req.params.id);
+
+  const after = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id);
+  audit({ usuarioId: req.user.id, entidad: 'cadenas', entidadId: after.id, accion: 'EDITAR', before: existente, after });
+  res.json(after);
+});
+
+// Elimina la cadena y todo lo asociado (jugadores vinculados, puestos,
+// calendario, obligaciones, pagos, entregas, movimientos de caja).
+router.delete('/:id', (req, res) => {
+  const existente = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id);
+  if (!existente) return res.status(404).json({ error: 'Cadena no existe' });
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM caja_movimientos WHERE cadena_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM pagos WHERE cadena_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM obligaciones WHERE cadena_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM entregas WHERE cadena_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM quincenas WHERE cadena_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM puestos_cadena WHERE cadena_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM cadena_participantes WHERE cadena_id = ?').run(req.params.id);
+    // Cadenas clonadas desde esta no deben quedar con una referencia rota.
+    db.prepare('UPDATE cadenas SET cadena_origen_id = NULL WHERE cadena_origen_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM cadenas WHERE id = ?').run(req.params.id);
+  });
+  tx();
+
+  audit({ usuarioId: req.user.id, entidad: 'cadenas', entidadId: Number(req.params.id), accion: 'ELIMINAR', before: existente });
+  res.status(204).end();
+});
+
 export default router;

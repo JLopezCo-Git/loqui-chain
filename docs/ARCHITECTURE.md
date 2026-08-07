@@ -36,6 +36,11 @@ Modelo en `server/src/db/initDb.js`, lógica de negocio en `server/src/services/
 
 Modelo de armado de una cadena, alineado a cómo se juega en la práctica (ver `Cadena2026.xlsx` de referencia): los participantes son un pool recurrente entre cadenas (`copiarCadena()` clona la lista de jugadores de una cadena origen a una nueva, vía `cadena_origen_id` al crear); el sorteo es un solo evento (asignar puesto a cada jugador) que la UI (`src/pages/Cadenas.tsx`) expone como un único flujo: crear/clonar → agregar o quitar jugadores → asignar puestos → "cerrar sorteo y activar". El dashboard (`src/components/cadena/CadenaGrid.tsx`) muestra la cadena activa como grilla participante×quincena, con click-to-pay/entregar, igual que el Excel.
 
+**Edición y borrado** — reglas de negocio deliberadas, no accidentes de implementación:
+- **Participante**: editar (nombre/celular/observaciones) sin restricción; **borrar bloqueado (409)** si está vinculado a alguna cadena (`cadena_participantes`) — evita perder historial de pagos por accidente. Hay que desvincularlo primero.
+- **Cadena**: editar sin restricción de estado (incluso `ACTIVA`) — si se cambia `valor_aporte_quincenal`/`numero_puestos` después de cerrado el sorteo, las obligaciones/entregas ya generadas **no se recalculan** (la UI lo advierte, pero no lo bloquea). Borrar una cadena hace cascada completa (jugadores, puestos, calendario, obligaciones, pagos, entregas, caja) y limpia `cadena_origen_id` en cualquier cadena clonada desde ella, para no romper la FK.
+- **Quitar jugador de una cadena** (`DELETE /participantes/vincular/:cadenaId/:participanteId`) y **deshacer un puesto del sorteo** (`DELETE /sorteo/:puestoId`): solo mientras la cadena está `PENDIENTE_SORTEO`. Una vez cerrado el sorteo (`ACTIVA`) ya existen obligaciones/entregas/movimientos de caja reales — deshacer eso es una reversión financiera que este endpoint no intenta resolver; queda como límite conocido (§9).
+
 ## 5. Agente de reglas (`server/src/routes/iaRoutes.js`)
 
 `POST /api/ia/consultar` es un motor de reglas por coincidencia de palabras clave sobre la pregunta (`mora`/`pendiente`, `caja`/`cuadra`, `entrega`) — **no es un LLM**, no hay tool-calling ni proveedor de IA configurado. Es de solo lectura: nunca escribe en la base de datos.
@@ -78,3 +83,5 @@ Pasos exactos: `loqui-platform/docs/CHECKLIST.md` §4-5.
 - Sin pruebas automatizadas.
 - Montos financieros como `REAL` en vez de enteros (centavos) — a diferencia del patrón recomendado en `cuentas-familiares`; considerar migrar si crece el volumen de transacciones.
 - Permisos de rol `PARTICIPANTE` no implementados (solo existe el rol, sin rutas específicas).
+- No hay forma de deshacer un puesto/jugador de una cadena ya `ACTIVA`, ni de editar montos con recálculo de lo ya generado — ver "Edición y borrado" en §4. Si se necesita, requiere diseñar una reversión financiera explícita (no un simple `DELETE`).
+- `documento` y `email` de `participantes` existen como columnas huérfanas en bases ya desplegadas antes de 2026-08-07 (la app ya no los lee ni escribe) — no se hizo una migración `DROP COLUMN`, solo se dejó de usarlas.

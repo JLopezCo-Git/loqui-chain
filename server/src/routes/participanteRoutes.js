@@ -77,4 +77,62 @@ router.get('/cadena/:cadenaId', (req, res) => {
   `).all(req.params.cadenaId));
 });
 
+router.patch('/:id', (req, res) => {
+  const existente = db.prepare('SELECT * FROM participantes WHERE id = ?').get(req.params.id);
+  if (!existente) return res.status(404).json({ error: 'Participante no existe' });
+
+  const parsed = participanteSchema.partial().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const p = { ...existente, ...parsed.data };
+  db.prepare('UPDATE participantes SET nombre = ?, celular = ?, observaciones = ? WHERE id = ?')
+    .run(p.nombre, p.celular || null, p.observaciones || null, req.params.id);
+
+  const item = db
+    .prepare('SELECT id, nombre, celular, estado, observaciones, creado_en FROM participantes WHERE id = ?')
+    .get(req.params.id);
+  audit({ usuarioId: req.user.id, entidad: 'participantes', entidadId: item.id, accion: 'EDITAR', before: existente, after: item });
+  res.json(item);
+});
+
+router.delete('/:id', (req, res) => {
+  const existente = db.prepare('SELECT * FROM participantes WHERE id = ?').get(req.params.id);
+  if (!existente) return res.status(404).json({ error: 'Participante no existe' });
+
+  const vinculos = db.prepare('SELECT COUNT(*) n FROM cadena_participantes WHERE participante_id = ?').get(req.params.id).n;
+  if (vinculos > 0) {
+    return res.status(409).json({ error: 'No se puede eliminar: el participante ya está vinculado a alguna cadena' });
+  }
+
+  db.prepare('DELETE FROM participantes WHERE id = ?').run(req.params.id);
+  audit({ usuarioId: req.user.id, entidad: 'participantes', entidadId: Number(req.params.id), accion: 'ELIMINAR', before: existente });
+  res.status(204).end();
+});
+
+// Quitar un jugador de una cadena que todavía está armando lista (antes de cerrar sorteo).
+// También limpia cualquier puesto que ya se le hubiera asignado en esa cadena.
+router.delete('/vincular/:cadenaId/:participanteId', (req, res) => {
+  const { cadenaId, participanteId } = req.params;
+  const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
+  if (!cadena) return res.status(404).json({ error: 'Cadena no existe' });
+  if (cadena.estado !== 'PENDIENTE_SORTEO') {
+    return res.status(400).json({ error: 'Solo se puede quitar un jugador mientras la cadena está armando lista (antes de cerrar sorteo)' });
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM puestos_cadena WHERE cadena_id = ? AND participante_id = ?').run(cadenaId, participanteId);
+    db.prepare('DELETE FROM cadena_participantes WHERE cadena_id = ? AND participante_id = ?').run(cadenaId, participanteId);
+  });
+  tx();
+
+  audit({
+    usuarioId: req.user.id,
+    entidad: 'cadena_participantes',
+    entidadId: Number(participanteId),
+    accion: 'QUITAR_DE_CADENA',
+    before: { cadena_id: Number(cadenaId), participante_id: Number(participanteId) }
+  });
+  res.status(204).end();
+});
+
 export default router;

@@ -39,6 +39,8 @@ export function Cadenas() {
   const [jugadores, setJugadores] = useState<Jugador[]>([]);
   const [puestos, setPuestos] = useState<PuestoCadena[]>([]);
   const [puestoForm, setPuestoForm] = useState<Record<number, { numero_puesto: string; fraccion: string }>>({});
+  const [editandoCadena, setEditandoCadena] = useState(false);
+  const [editCadenaForm, setEditCadenaForm] = useState(FORM_INICIAL);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
 
@@ -64,6 +66,7 @@ export function Cadenas() {
 
   useEffect(() => {
     if (seleccionId) loadDetalle(seleccionId);
+    setEditandoCadena(false);
   }, [seleccionId, loadDetalle]);
 
   function fail(err: unknown, fallback: string) {
@@ -137,6 +140,75 @@ export function Cadenas() {
       await loadDetalle(seleccionId);
     } catch (err) {
       fail(err, 'Error al asignar puesto');
+    }
+  }
+
+  function empezarEdicionCadena() {
+    if (!seleccion) return;
+    setEditCadenaForm({
+      nombre: seleccion.nombre,
+      anio: seleccion.anio,
+      valor_aporte_quincenal: seleccion.valor_aporte_quincenal,
+      numero_puestos: seleccion.numero_puestos,
+      fecha_inicio: seleccion.fecha_inicio || '',
+      cadena_origen_id: '',
+    });
+    setEditandoCadena(true);
+  }
+
+  async function guardarEdicionCadena() {
+    if (!seleccionId) return;
+    setError('');
+    try {
+      await api.patch(`/cadenas/${seleccionId}`, {
+        nombre: editCadenaForm.nombre,
+        anio: Number(editCadenaForm.anio),
+        valor_aporte_quincenal: Number(editCadenaForm.valor_aporte_quincenal),
+        numero_puestos: Number(editCadenaForm.numero_puestos),
+        fecha_inicio: editCadenaForm.fecha_inicio,
+      });
+      setMsg('Cadena actualizada');
+      setEditandoCadena(false);
+      await loadCadenas();
+    } catch (err) {
+      fail(err, 'Error al editar cadena');
+    }
+  }
+
+  async function eliminarCadena() {
+    if (!seleccion) return;
+    if (!window.confirm(`¿Eliminar "${seleccion.nombre} ${seleccion.anio}"? Esto borra jugadores, sorteo, pagos y entregas asociados.`)) return;
+    setError('');
+    try {
+      await api.delete(`/cadenas/${seleccion.id}`);
+      setMsg('Cadena eliminada');
+      setSeleccionId(null);
+      await loadCadenas();
+    } catch (err) {
+      fail(err, 'Error al eliminar cadena');
+    }
+  }
+
+  async function quitarJugador(jugador: Jugador) {
+    if (!seleccionId) return;
+    if (!window.confirm(`¿Quitar a ${jugador.nombre} de esta cadena?`)) return;
+    setError('');
+    try {
+      await api.delete(`/participantes/vincular/${seleccionId}/${jugador.participante_id}`);
+      await loadDetalle(seleccionId);
+    } catch (err) {
+      fail(err, 'Error al quitar jugador');
+    }
+  }
+
+  async function deshacerPuesto(puestoId: number) {
+    if (!seleccionId) return;
+    setError('');
+    try {
+      await api.delete(`/sorteo/${puestoId}`);
+      await loadDetalle(seleccionId);
+    } catch (err) {
+      fail(err, 'Error al deshacer puesto');
     }
   }
 
@@ -259,16 +331,79 @@ export function Cadenas() {
 
       {seleccion && (
         <Card>
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-semibold text-text">
-              Jugadores de {seleccion.nombre} {seleccion.anio}
+              {seleccion.nombre} {seleccion.anio}
             </h3>
-            {seleccion.estado === 'PENDIENTE_SORTEO' && (
-              <Button onClick={cerrarSorteo} disabled={!puestosCompletos}>
-                Cerrar sorteo y activar
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={empezarEdicionCadena}>
+                Editar cadena
               </Button>
-            )}
+              <Button variant="ghost" onClick={eliminarCadena}>
+                Eliminar cadena
+              </Button>
+              {seleccion.estado === 'PENDIENTE_SORTEO' && (
+                <Button onClick={cerrarSorteo} disabled={!puestosCompletos}>
+                  Cerrar sorteo y activar
+                </Button>
+              )}
+            </div>
           </div>
+
+          {editandoCadena && (
+            <div className="mb-4 rounded-lg border border-border p-3">
+              {seleccion.estado === 'ACTIVA' && (
+                <Banner kind="error">
+                  Esta cadena ya está activa: cambiar el valor de puesto o el número de puestos NO recalcula las
+                  obligaciones/entregas ya generadas.
+                </Banner>
+              )}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <Label>Nombre</Label>
+                  <Input value={editCadenaForm.nombre} onChange={(e) => setEditCadenaForm({ ...editCadenaForm, nombre: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Año</Label>
+                  <Input
+                    type="number"
+                    value={editCadenaForm.anio}
+                    onChange={(e) => setEditCadenaForm({ ...editCadenaForm, anio: Number(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <Label>Número puestos</Label>
+                  <Input
+                    type="number"
+                    value={editCadenaForm.numero_puestos}
+                    onChange={(e) => setEditCadenaForm({ ...editCadenaForm, numero_puestos: Number(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <Label>Valor puesto quincenal</Label>
+                  <Input
+                    type="number"
+                    value={editCadenaForm.valor_aporte_quincenal}
+                    onChange={(e) => setEditCadenaForm({ ...editCadenaForm, valor_aporte_quincenal: Number(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <Label>Fecha inicio</Label>
+                  <Input
+                    type="date"
+                    value={editCadenaForm.fecha_inicio}
+                    onChange={(e) => setEditCadenaForm({ ...editCadenaForm, fecha_inicio: e.target.value })}
+                  />
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button onClick={guardarEdicionCadena}>Guardar cambios</Button>
+                  <Button variant="ghost" onClick={() => setEditandoCadena(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {seleccion.estado === 'PENDIENTE_SORTEO' && (
             <div className="mb-4 flex flex-wrap items-end gap-2">
@@ -303,7 +438,12 @@ export function Cadenas() {
                 <tr>
                   <th className="px-3 py-2 font-medium">Jugador</th>
                   <th className="px-3 py-2 font-medium">Puestos asignados</th>
-                  {seleccion.estado === 'PENDIENTE_SORTEO' && <th className="px-3 py-2 font-medium">Asignar puesto (sorteo)</th>}
+                  {seleccion.estado === 'PENDIENTE_SORTEO' && (
+                    <>
+                      <th className="px-3 py-2 font-medium">Asignar puesto (sorteo)</th>
+                      <th className="px-3 py-2 font-medium"></th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -317,8 +457,17 @@ export function Cadenas() {
                         {puestosJugador.length ? (
                           <div className="flex flex-wrap items-center gap-1">
                             {puestosJugador.map((p) => (
-                              <span key={p.id} className="rounded-full bg-surface-3 px-2 py-0.5 text-xs">
+                              <span key={p.id} className="flex items-center gap-1 rounded-full bg-surface-3 px-2 py-0.5 text-xs">
                                 #{p.numero_puesto} ({p.fraccion})
+                                {seleccion.estado === 'PENDIENTE_SORTEO' && (
+                                  <button
+                                    onClick={() => deshacerPuesto(p.id)}
+                                    title="Deshacer este puesto"
+                                    className="text-text-faint hover:text-error"
+                                  >
+                                    ×
+                                  </button>
+                                )}
                               </span>
                             ))}
                             <span className="text-xs text-text-faint">= {totalFraccion} puesto(s)</span>
@@ -328,47 +477,54 @@ export function Cadenas() {
                         )}
                       </td>
                       {seleccion.estado === 'PENDIENTE_SORTEO' && (
-                        <td className="px-3 py-2">
-                          <div className="flex gap-2">
-                            <Input
-                              type="number"
-                              placeholder="# puesto"
-                              className="w-24"
-                              value={puestoForm[j.participante_id]?.numero_puesto ?? ''}
-                              onChange={(e) =>
-                                setPuestoForm({
-                                  ...puestoForm,
-                                  [j.participante_id]: { ...puestoForm[j.participante_id], numero_puesto: e.target.value },
-                                })
-                              }
-                            />
-                            <Select
-                              className="w-28"
-                              value={puestoForm[j.participante_id]?.fraccion ?? '1'}
-                              onChange={(e) =>
-                                setPuestoForm({
-                                  ...puestoForm,
-                                  [j.participante_id]: { ...puestoForm[j.participante_id], fraccion: e.target.value },
-                                })
-                              }
-                            >
-                              <option value="1">Completo</option>
-                              <option value="0.75">3/4</option>
-                              <option value="0.5">Medio</option>
-                              <option value="0.25">1/4</option>
-                            </Select>
-                            <Button variant="ghost" onClick={() => asignarPuesto(j)}>
-                              {puestosJugador.length ? 'Agregar otro puesto' : 'Asignar'}
+                        <>
+                          <td className="px-3 py-2">
+                            <div className="flex gap-2">
+                              <Input
+                                type="number"
+                                placeholder="# puesto"
+                                className="w-24"
+                                value={puestoForm[j.participante_id]?.numero_puesto ?? ''}
+                                onChange={(e) =>
+                                  setPuestoForm({
+                                    ...puestoForm,
+                                    [j.participante_id]: { ...puestoForm[j.participante_id], numero_puesto: e.target.value },
+                                  })
+                                }
+                              />
+                              <Select
+                                className="w-28"
+                                value={puestoForm[j.participante_id]?.fraccion ?? '1'}
+                                onChange={(e) =>
+                                  setPuestoForm({
+                                    ...puestoForm,
+                                    [j.participante_id]: { ...puestoForm[j.participante_id], fraccion: e.target.value },
+                                  })
+                                }
+                              >
+                                <option value="1">Completo</option>
+                                <option value="0.75">3/4</option>
+                                <option value="0.5">Medio</option>
+                                <option value="0.25">1/4</option>
+                              </Select>
+                              <Button variant="ghost" onClick={() => asignarPuesto(j)}>
+                                {puestosJugador.length ? 'Agregar otro puesto' : 'Asignar'}
+                              </Button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Button variant="ghost" onClick={() => quitarJugador(j)}>
+                              Quitar
                             </Button>
-                          </div>
-                        </td>
+                          </td>
+                        </>
                       )}
                     </tr>
                   );
                 })}
                 {!jugadores.length && (
                   <tr>
-                    <td colSpan={3} className="px-3 py-4 text-center text-text-faint">
+                    <td colSpan={4} className="px-3 py-4 text-center text-text-faint">
                       Todavía no hay jugadores en esta cadena.
                     </td>
                   </tr>

@@ -61,4 +61,20 @@ router.post('/', (req, res) => {
   res.status(201).json(item);
 });
 
+// Deshacer un puesto asignado por error, solo mientras la cadena no ha
+// cerrado sorteo (antes de eso no existen obligaciones/entregas que reversar).
+router.delete('/:id', (req, res) => {
+  const puesto = db.prepare('SELECT * FROM puestos_cadena WHERE id = ?').get(req.params.id);
+  if (!puesto) return res.status(404).json({ error: 'Puesto no existe' });
+
+  const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(puesto.cadena_id);
+  if (cadena.estado !== 'PENDIENTE_SORTEO') {
+    return res.status(400).json({ error: 'Solo se puede deshacer un puesto mientras la cadena está armando lista (antes de cerrar sorteo)' });
+  }
+
+  db.prepare('DELETE FROM puestos_cadena WHERE id = ?').run(req.params.id);
+  audit({ usuarioId: req.user.id, entidad: 'puestos_cadena', entidadId: puesto.id, accion: 'DESHACER_SORTEO', before: puesto });
+  res.status(204).end();
+});
+
 export default router;
