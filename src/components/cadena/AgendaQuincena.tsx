@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCheck } from 'lucide-react';
 import { api } from '../../utils/api';
 import { money } from '../../utils/money';
 import { Button } from '../ui/Button';
@@ -15,6 +15,8 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirmPago, setConfirmPago] = useState<Obligacion | null>(null);
+  const [confirmCerrar, setConfirmCerrar] = useState(false);
+  const [cerrando, setCerrando] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -66,6 +68,20 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
     }
   }
 
+  async function cerrarQuincena() {
+    if (!quincena) return;
+    setCerrando(true);
+    try {
+      await api.post(`/cadenas/${cadenaId}/quincenas/${quincena.id}/cerrar`);
+      setConfirmCerrar(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cerrar la quincena');
+    } finally {
+      setCerrando(false);
+    }
+  }
+
   if (error) return <p className="text-sm text-error">{error}</p>;
   if (!data || !quincena) return <p className="text-text-muted">Cargando agenda...</p>;
 
@@ -93,6 +109,17 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
           <ChevronRight size={16} />
         </Button>
       </div>
+
+      {quincena.estado === 'CERRADA' ? (
+        <div className="flex items-center justify-center gap-2 rounded-md bg-success/10 px-3 py-2 text-sm text-success">
+          <CheckCheck size={16} aria-hidden="true" /> Quincena cerrada: todos pagaron y se entregó
+        </div>
+      ) : (
+        <Button variant="ghost" onClick={() => setConfirmCerrar(true)} className="justify-center">
+          <CheckCheck size={16} />
+          Todos pagaron y se entregó
+        </Button>
+      )}
 
       {entregaQuincena && (
         <div className="rounded-md bg-violet-role/10 px-3 py-2 text-sm text-violet-role">
@@ -135,6 +162,15 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
         confirmLabel="Marcar pagado"
         onConfirm={confirmarPago}
         onCancel={() => setConfirmPago(null)}
+      />
+      <ConfirmPopover
+        open={confirmCerrar}
+        title="Cerrar quincena"
+        description={`Se marcará como pagado el saldo pendiente de TODOS en la quincena ${quincena.numero_quincena}, y como entregado lo programado para este ciclo. No se puede deshacer.`}
+        confirmLabel="Sí, todos pagaron y se entregó"
+        loading={cerrando}
+        onConfirm={cerrarQuincena}
+        onCancel={() => setConfirmCerrar(false)}
       />
     </div>
   );

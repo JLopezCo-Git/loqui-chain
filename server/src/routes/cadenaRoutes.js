@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
-import { cerrarSorteoYActivar, copiarCadena } from '../services/cadenaService.js';
+import { cerrarSorteoYActivar, cerrarQuincena, copiarCadena } from '../services/cadenaService.js';
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -65,6 +65,18 @@ router.post('/:id/cerrar-sorteo', (req, res) => {
     cerrarSorteoYActivar(Number(req.params.id));
     audit({ usuarioId: req.user.id, entidad: 'cadenas', entidadId: Number(req.params.id), accion: 'CERRAR_SORTEO_Y_ACTIVAR' });
     res.json(db.prepare('SELECT * FROM cadenas WHERE id = ?').get(req.params.id));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Cierra una quincena completa en un solo paso: paga todo lo pendiente de esa
+// quincena y entrega todo lo programado para ese ciclo, en una transacción.
+router.post('/:id/quincenas/:quincenaId/cerrar', (req, res) => {
+  try {
+    cerrarQuincena(Number(req.params.id), Number(req.params.quincenaId), req.user.id);
+    audit({ usuarioId: req.user.id, entidad: 'quincenas', entidadId: Number(req.params.quincenaId), accion: 'CERRAR_QUINCENA' });
+    res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }

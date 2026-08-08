@@ -9,6 +9,39 @@ export function saldoCaja(cadenaId) {
   return row.saldo || 0;
 }
 
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+function ultimoDiaMes(year, month) {
+  return new Date(year, month, 0).getDate(); // día 0 del mes siguiente = último día de este mes
+}
+
+// Genera N fechas ancladas al calendario real: siempre 15 o "30" (el 30, o el
+// último día del mes si tiene menos de 30 -- ej. febrero) de cada mes.
+// Nunca "cada 15 días corridos" desde fechaInicio, porque eso se desalinea
+// del calendario apenas un mes tiene más de 30 días (marzo, mayo, etc.).
+export function generarFechasQuincenales(fechaInicio, cantidad) {
+  let [year, month, dia] = fechaInicio.split('-').map(Number);
+  let esQuince = dia <= 15;
+  const fechas = [];
+  for (let i = 0; i < cantidad; i++) {
+    const diaFecha = esQuince ? 15 : Math.min(30, ultimoDiaMes(year, month));
+    fechas.push(`${year}-${pad(month)}-${pad(diaFecha)}`);
+    if (esQuince) {
+      esQuince = false;
+    } else {
+      esQuince = true;
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+    }
+  }
+  return fechas;
+}
+
 export function generarCalendario(cadenaId, fechaInicio) {
   const cadena = db.prepare('SELECT * FROM cadenas WHERE id = ?').get(cadenaId);
   if (!cadena) throw new Error('Cadena no existe');
@@ -20,13 +53,8 @@ export function generarCalendario(cadenaId, fechaInicio) {
     VALUES (?,?,?,?)
   `);
 
-  const base = new Date(`${fechaInicio}T00:00:00`);
-  for (let i = 0; i < cadena.numero_puestos; i++) {
-    const d = new Date(base);
-    d.setDate(base.getDate() + (15 * i));
-    const iso = d.toISOString().slice(0, 10);
-    insert.run(cadenaId, i + 1, iso, iso);
-  }
+  const fechas = generarFechasQuincenales(fechaInicio, cadena.numero_puestos);
+  fechas.forEach((iso, i) => insert.run(cadenaId, i + 1, iso, iso));
 
   db.prepare('UPDATE cadenas SET fecha_inicio = ? WHERE id = ?').run(fechaInicio, cadenaId);
 }
@@ -108,6 +136,64 @@ export function cerrarSorteoYActivar(cadenaId) {
   for (const p of puestos) generarObligacionesParaPuesto(cadenaId, p);
 
   db.prepare("UPDATE cadenas SET estado = 'ACTIVA' WHERE id = ?").run(cadenaId);
+}
+
+// Marca una quincena completa como resuelta en un solo paso: paga el saldo
+// pendiente de TODAS las obligaciones de esa quincena y entrega TODO lo
+// programado para ese ciclo, todo en una sola transacción (o nada, si algo
+// falla -- ej. caja insuficiente para la entrega). Pensado para el caso real
+// de "ya sé que todos pagaron y ya se entregó, no quiero marcar uno por uno".
+export function cerrarQuincena(cadenaId, quincenaId, usuarioId) {
+  const quincena = db.prepare('SELECT * FROM quincenas WHERE id = ? AND cadena_id = ?').get(quincenaId, cadenaId);
+  if (!quincena) throw new Error('Quincena no existe');
+
+  const tx = db.transaction(() => {
+    const obligaciones = db
+      .prepare("SELECT * FROM obligaciones WHERE cadena_id = ? AND quincena_id = ? AND estado <> 'PAGADA'")
+      .all(cadenaId, quincenaId);
+
+    const insertPago = db.prepare(`
+      INSERT INTO pagos(obligacion_id, cadena_id, participante_id, valor_pago, metodo_pago, registrado_por, observaciones)
+      VALUES (?,?,?,?,?,?,?)
+    `);
+    const actualizarObligacion = db.prepare(
+      "UPDATE obligaciones SET valor_pagado = valor_esperado, saldo_pendiente = 0, estado = 'PAGADA' WHERE id = ?",
+    );
+    const insertMovimiento = db.prepare(`
+      INSERT INTO caja_movimientos(cadena_id, tipo, origen, origen_id, entrada, salida, saldo_resultante, registrado_por)
+      VALUES (?,?,?,?,?,?,?,?)
+    `);
+
+    for (const o of obligaciones) {
+      if (o.saldo_pendiente <= 0) continue;
+      const pago = insertPago.run(o.id, cadenaId, o.participante_id, o.saldo_pendiente, 'Efectivo', usuarioId, 'Cierre de quincena (todos)');
+      actualizarObligacion.run(o.id);
+      const saldoNuevo = saldoCaja(cadenaId) + o.saldo_pendiente;
+      insertMovimiento.run(cadenaId, 'ENTRADA', 'PAGO', pago.lastInsertRowid, o.saldo_pendiente, 0, saldoNuevo, usuarioId);
+    }
+
+    const entregas = db
+      .prepare("SELECT * FROM entregas WHERE cadena_id = ? AND quincena_id = ? AND estado <> 'ENTREGADA'")
+      .all(cadenaId, quincenaId);
+
+    for (const e of entregas) {
+      const pendiente = e.valor_esperado - e.valor_entregado;
+      if (pendiente <= 0) continue;
+      const disponible = saldoCaja(cadenaId);
+      if (pendiente > disponible) {
+        throw new Error(`Caja insuficiente para entregar todo lo de esta quincena. Disponible: ${disponible}, falta entregar: ${pendiente}`);
+      }
+      db.prepare(
+        "UPDATE entregas SET valor_entregado = valor_esperado, fecha_entrega = CURRENT_TIMESTAMP, estado = 'ENTREGADA' WHERE id = ?",
+      ).run(e.id);
+      const saldoNuevo = disponible - pendiente;
+      insertMovimiento.run(cadenaId, 'SALIDA', 'ENTREGA', e.id, 0, pendiente, saldoNuevo, usuarioId);
+    }
+
+    db.prepare("UPDATE quincenas SET estado = 'CERRADA' WHERE id = ?").run(quincenaId);
+  });
+
+  tx();
 }
 
 export function copiarCadena(origenId, nuevaCadenaId) {

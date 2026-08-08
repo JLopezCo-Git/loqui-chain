@@ -1,8 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { CheckCheck } from 'lucide-react';
 import { api } from '../../utils/api';
 import { money } from '../../utils/money';
+import { Button } from '../ui/Button';
 import { ConfirmPopover } from '../ui/ConfirmPopover';
 import type { GrillaCadena, Obligacion, Entrega } from '../../types';
+
+type Quincena = GrillaCadena['quincenas'][number];
 
 function fechaCorta(iso: string) {
   const [, m, d] = iso.split('-');
@@ -41,6 +45,8 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirmPago, setConfirmPago] = useState<Obligacion | null>(null);
   const [confirmEntrega, setConfirmEntrega] = useState<Entrega | null>(null);
+  const [confirmQuincena, setConfirmQuincena] = useState<Quincena | null>(null);
+  const [cerrandoQuincena, setCerrandoQuincena] = useState(false);
   const [buscar, setBuscar] = useState('');
 
   const load = useCallback(async () => {
@@ -102,6 +108,21 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
     }
   }
 
+  async function cerrarQuincena() {
+    if (!confirmQuincena) return;
+    const quincena = confirmQuincena;
+    setCerrandoQuincena(true);
+    try {
+      await api.post(`/cadenas/${cadenaId}/quincenas/${quincena.id}/cerrar`);
+      setConfirmQuincena(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cerrar la quincena');
+    } finally {
+      setCerrandoQuincena(false);
+    }
+  }
+
   if (error) return <p className="text-sm text-error">{error}</p>;
   if (!data) return <p className="text-text-muted">Cargando grilla...</p>;
 
@@ -150,8 +171,26 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
                   key={q.id}
                   className={`whitespace-nowrap px-2 py-2 text-center font-medium ${q.id === quincenaActualId ? 'bg-accent/15 text-accent' : ''}`}
                 >
-                  {fechaCorta(q.fecha_programada)}
-                  {q.id === quincenaActualId && <span className="block text-[10px] font-normal">actual</span>}
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>
+                      {fechaCorta(q.fecha_programada)}
+                      {q.id === quincenaActualId && <span className="block text-[10px] font-normal">actual</span>}
+                    </span>
+                    {q.estado === 'CERRADA' ? (
+                      <span title="Quincena cerrada: todos pagaron y se entregó" className="text-success">
+                        <CheckCheck size={14} aria-hidden="true" />
+                      </span>
+                    ) : (
+                      <Button
+                        variant="icon"
+                        onClick={() => setConfirmQuincena(q)}
+                        aria-label={`Cerrar quincena del ${fechaCorta(q.fecha_programada)}: marcar que todos pagaron y se entregó`}
+                        title="Todos pagaron y se entregó"
+                      >
+                        <CheckCheck size={14} />
+                      </Button>
+                    )}
+                  </div>
                 </th>
               ))}
               <th className="whitespace-nowrap px-3 py-2 font-medium">Entrega</th>
@@ -248,6 +287,19 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
         confirmLabel="Marcar entregado"
         onConfirm={confirmarEntrega}
         onCancel={() => setConfirmEntrega(null)}
+      />
+      <ConfirmPopover
+        open={!!confirmQuincena}
+        title="Cerrar quincena"
+        description={
+          confirmQuincena
+            ? `Se marcará como pagado el saldo pendiente de TODOS los participantes de la quincena del ${fechaCorta(confirmQuincena.fecha_programada)}, y como entregado lo programado para ese ciclo. No se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Sí, todos pagaron y se entregó"
+        loading={cerrandoQuincena}
+        onConfirm={cerrarQuincena}
+        onCancel={() => setConfirmQuincena(null)}
       />
     </div>
   );
