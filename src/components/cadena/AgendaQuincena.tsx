@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, CheckCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCheck, Undo2 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { money } from '../../utils/money';
 import { Button } from '../ui/Button';
@@ -22,6 +22,8 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
   const [confirmCerrar, setConfirmCerrar] = useState(false);
   const [cerrando, setCerrando] = useState(false);
+  const [confirmDeshacer, setConfirmDeshacer] = useState<Obligacion | null>(null);
+  const [deshaciendo, setDeshaciendo] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +82,21 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
       setError(err instanceof Error ? err.message : 'Error al registrar pago');
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function deshacerPago() {
+    if (!confirmDeshacer) return;
+    const obligacion = confirmDeshacer;
+    setDeshaciendo(true);
+    try {
+      await api.post(`/pagos/${obligacion.id}/deshacer`);
+      setConfirmDeshacer(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al deshacer el pago');
+    } finally {
+      setDeshaciendo(false);
     }
   }
 
@@ -160,11 +177,23 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
                   {pagada ? 'Pagado' : vencida ? 'Vencida' : 'Pendiente'} · {money(obligacion.saldo_pendiente)}
                 </span>
               </div>
-              {!pagada && (
-                <Button variant={vencida ? 'danger' : 'ghost'} loading={busyId === obligacion.id} onClick={() => abrirConfirmPago(obligacion)}>
-                  Marcar pagado
-                </Button>
-              )}
+              <div className="flex items-center gap-1">
+                {!pagada && (
+                  <Button variant={vencida ? 'danger' : 'ghost'} loading={busyId === obligacion.id} onClick={() => abrirConfirmPago(obligacion)}>
+                    Marcar pagado
+                  </Button>
+                )}
+                {obligacion.valor_pagado > 0 && (
+                  <Button
+                    variant="icon"
+                    onClick={() => setConfirmDeshacer(obligacion)}
+                    aria-label={`Deshacer el último pago de ${fila.participante}`}
+                    title="Deshacer último pago"
+                  >
+                    <Undo2 size={14} />
+                  </Button>
+                )}
+              </div>
             </li>
           );
         })}
@@ -220,6 +249,20 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
         loading={cerrando}
         onConfirm={cerrarQuincena}
         onCancel={() => setConfirmCerrar(false)}
+      />
+      <ConfirmPopover
+        open={!!confirmDeshacer}
+        title="Deshacer pago"
+        description={
+          confirmDeshacer
+            ? `Se deshará el último pago registrado de ${confirmDeshacer.participante} en esta quincena. Si ese dinero ya se usó en una entrega, no se podrá deshacer.`
+            : undefined
+        }
+        confirmLabel="Sí, deshacer"
+        danger
+        loading={deshaciendo}
+        onConfirm={deshacerPago}
+        onCancel={() => setConfirmDeshacer(null)}
       />
     </div>
   );

@@ -69,4 +69,38 @@ router.post('/', (req, res) => {
   res.status(201).json(tx());
 });
 
+// Deshace el último pago registrado para una obligación (por si se marcó
+// por error). Recalcula valor_pagado/saldo_pendiente/estado a partir de los
+// pagos que queden (no resta a mano, para no arrastrar un error previo).
+// Bloquea si ese dinero ya no está en caja (ya se usó en una entrega) --
+// deshacer un pago nunca deja la caja en negativo.
+router.post('/:obligacionId/deshacer', (req, res) => {
+  const o = db.prepare('SELECT * FROM obligaciones WHERE id = ?').get(req.params.obligacionId);
+  if (!o) return res.status(404).json({ error: 'Obligación no existe' });
+
+  const ultimoPago = db.prepare('SELECT * FROM pagos WHERE obligacion_id = ? ORDER BY id DESC LIMIT 1').get(o.id);
+  if (!ultimoPago) return res.status(400).json({ error: 'No hay pagos registrados para deshacer' });
+
+  const disponible = saldoCaja(o.cadena_id);
+  if (ultimoPago.valor_pago > disponible) {
+    return res
+      .status(400)
+      .json({ error: `No se puede deshacer: ese dinero ya se usó (caja disponible ${disponible}, el pago era de ${ultimoPago.valor_pago})` });
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM pagos WHERE id = ?').run(ultimoPago.id);
+    db.prepare("DELETE FROM caja_movimientos WHERE origen = 'PAGO' AND origen_id = ?").run(ultimoPago.id);
+
+    const restante = db.prepare('SELECT COALESCE(SUM(valor_pago),0) n FROM pagos WHERE obligacion_id = ?').get(o.id).n;
+    const saldo = Math.max(o.valor_esperado - restante, 0);
+    const estado = restante === 0 ? 'PENDIENTE' : saldo === 0 ? 'PAGADA' : 'PARCIAL';
+    db.prepare('UPDATE obligaciones SET valor_pagado = ?, saldo_pendiente = ?, estado = ? WHERE id = ?').run(restante, saldo, estado, o.id);
+  });
+  tx();
+
+  audit({ usuarioId: req.user.id, entidad: 'pagos', entidadId: ultimoPago.id, accion: 'DESHACER', before: ultimoPago });
+  res.json(db.prepare('SELECT * FROM obligaciones WHERE id = ?').get(o.id));
+});
+
 export default router;

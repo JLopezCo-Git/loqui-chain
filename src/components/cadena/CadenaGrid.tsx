@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { CheckCheck, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCheck, Download, ChevronDown, ChevronUp, Undo2 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { money } from '../../utils/money';
 import { Button } from '../ui/Button';
@@ -77,8 +77,11 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
   const [buscar, setBuscar] = useState('');
   const [vista, setVista] = useState<'fecha' | 'participante'>('fecha');
   const [soloPendientes, setSoloPendientes] = useState(false);
+  const [ocultarCompletas, setOcultarCompletas] = useState(true);
   const [rango, setRango] = useState<[number, number] | null>(null);
   const [expandido, setExpandido] = useState<number | null>(null);
+  const [confirmDeshacer, setConfirmDeshacer] = useState<Obligacion | null>(null);
+  const [deshaciendo, setDeshaciendo] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -139,6 +142,21 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
     }
   }
 
+  async function deshacerPago() {
+    if (!confirmDeshacer) return;
+    const obligacion = confirmDeshacer;
+    setDeshaciendo(true);
+    try {
+      await api.post(`/pagos/${obligacion.id}/deshacer`);
+      setConfirmDeshacer(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al deshacer el pago');
+    } finally {
+      setDeshaciendo(false);
+    }
+  }
+
   async function confirmarEntrega() {
     if (!confirmEntrega) return;
     const entrega = confirmEntrega;
@@ -174,7 +192,16 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
 
   const desde = rango ? rango[0] : 0;
   const hasta = rango ? rango[1] : data.quincenas.length - 1;
-  const indicesVisibles = data.quincenas.map((_, i) => i).filter((i) => i >= desde && i <= hasta);
+
+  function quincenaTienePendiente(i: number) {
+    return data!.filas.some((f) => {
+      const est = estadoCelda(f.celdas[i], data!.quincenas[i].fecha_limite_pago, hoy);
+      return est === 'parcial' || est === 'proxima' || est === 'vencida';
+    });
+  }
+
+  const indicesEnRango = data.quincenas.map((_, i) => i).filter((i) => i >= desde && i <= hasta);
+  const indicesVisibles = ocultarCompletas ? indicesEnRango.filter(quincenaTienePendiente) : indicesEnRango;
   const quincenasVisibles = indicesVisibles.map((i) => data.quincenas[i]);
 
   const filasBusqueda = data.filas.filter((f) => f.participante.toLowerCase().includes(buscar.toLowerCase()));
@@ -239,7 +266,11 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
 
         <label className="flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-xs text-text-muted">
           <input type="checkbox" checked={soloPendientes} onChange={(e) => setSoloPendientes(e.target.checked)} />
-          Solo pendientes
+          Solo participantes con pendientes
+        </label>
+        <label className="flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-xs text-text-muted">
+          <input type="checkbox" checked={ocultarCompletas} onChange={(e) => setOcultarCompletas(e.target.checked)} />
+          Solo quincenas con pendientes
         </label>
 
         <div className="flex items-center gap-1 text-xs text-text-muted">
@@ -279,7 +310,11 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
         </Button>
       </div>
 
-      {vista === 'fecha' ? (
+      {indicesVisibles.length === 0 ? (
+        <p className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          No hay quincenas con pendientes en el rango seleccionado — todo al día.
+        </p>
+      ) : vista === 'fecha' ? (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="text-left text-sm">
             <thead className="bg-surface-2 text-text-muted">
@@ -342,19 +377,34 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
                       const estado = estadoCelda(obligacion, quincena.fecha_limite_pago, hoy);
                       return (
                         <td key={quincena.id} className={`p-1 text-center ${quincena.id === quincenaActualId ? 'bg-accent/5' : ''}`}>
-                          <button
-                            disabled={!obligacion || estado === 'pagada' || busyId === obligacion?.id}
-                            onClick={() => obligacion && abrirConfirmPago(obligacion)}
-                            aria-label={
-                              obligacion
-                                ? `${fila.participante}, quincena del ${fechaCorta(quincena.fecha_programada)}: ${ETIQUETA_ESTADO[estado]}, ${money(obligacion.saldo_pendiente)}`
-                                : 'Sin obligación'
-                            }
-                            title={obligacion ? `${ETIQUETA_ESTADO[estado]} — esperado ${money(obligacion.valor_esperado)}` : 'Sin obligación'}
-                            className={`h-8 w-16 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default ${ESTILO_CELDA[estado]}`}
-                          >
-                            {estado === 'pagada' ? '✓' : obligacion ? money(obligacion.saldo_pendiente) : '—'}
-                          </button>
+                          <div className="relative inline-block">
+                            <button
+                              disabled={!obligacion || estado === 'pagada' || busyId === obligacion?.id}
+                              onClick={() => obligacion && abrirConfirmPago(obligacion)}
+                              aria-label={
+                                obligacion
+                                  ? `${fila.participante}, quincena del ${fechaCorta(quincena.fecha_programada)}: ${ETIQUETA_ESTADO[estado]}, ${money(obligacion.saldo_pendiente)}`
+                                  : 'Sin obligación'
+                              }
+                              title={obligacion ? `${ETIQUETA_ESTADO[estado]} — esperado ${money(obligacion.valor_esperado)}` : 'Sin obligación'}
+                              className={`h-8 w-16 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default ${ESTILO_CELDA[estado]}`}
+                            >
+                              {estado === 'pagada' ? '✓' : obligacion ? money(obligacion.saldo_pendiente) : '—'}
+                            </button>
+                            {obligacion && obligacion.valor_pagado > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConfirmDeshacer(obligacion);
+                                }}
+                                aria-label={`Deshacer el último pago de ${fila.participante} en esta quincena`}
+                                title="Deshacer último pago"
+                                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-surface-3 text-text-faint ring-1 ring-border hover:bg-error/20 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                              >
+                                <Undo2 size={9} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       );
                     })}
@@ -434,16 +484,30 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
                       const quincena = data.quincenas[i];
                       const estado = estadoCelda(obligacion, quincena.fecha_limite_pago, hoy);
                       return (
-                        <button
-                          key={quincena.id}
-                          disabled={!obligacion || estado === 'pagada' || busyId === obligacion?.id}
-                          onClick={() => obligacion && abrirConfirmPago(obligacion)}
-                          title={`${fechaCorta(quincena.fecha_programada)} — ${ETIQUETA_ESTADO[estado]}`}
-                          className={`flex h-10 w-16 flex-col items-center justify-center rounded-md text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default ${ESTILO_CELDA[estado]}`}
-                        >
-                          <span>{fechaCorta(quincena.fecha_programada)}</span>
-                          <span>{estado === 'pagada' ? '✓' : obligacion ? money(obligacion.saldo_pendiente) : '—'}</span>
-                        </button>
+                        <div key={quincena.id} className="relative inline-block">
+                          <button
+                            disabled={!obligacion || estado === 'pagada' || busyId === obligacion?.id}
+                            onClick={() => obligacion && abrirConfirmPago(obligacion)}
+                            title={`${fechaCorta(quincena.fecha_programada)} — ${ETIQUETA_ESTADO[estado]}`}
+                            className={`flex h-10 w-16 flex-col items-center justify-center rounded-md text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default ${ESTILO_CELDA[estado]}`}
+                          >
+                            <span>{fechaCorta(quincena.fecha_programada)}</span>
+                            <span>{estado === 'pagada' ? '✓' : obligacion ? money(obligacion.saldo_pendiente) : '—'}</span>
+                          </button>
+                          {obligacion && obligacion.valor_pagado > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmDeshacer(obligacion);
+                              }}
+                              aria-label={`Deshacer el último pago de ${fila.participante} en esta quincena`}
+                              title="Deshacer último pago"
+                              className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-surface-3 text-text-faint ring-1 ring-border hover:bg-error/20 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                              <Undo2 size={9} />
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -514,6 +578,20 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
         loading={cerrandoQuincena}
         onConfirm={cerrarQuincena}
         onCancel={() => setConfirmQuincena(null)}
+      />
+      <ConfirmPopover
+        open={!!confirmDeshacer}
+        title="Deshacer pago"
+        description={
+          confirmDeshacer
+            ? `Se deshará el último pago registrado de ${confirmDeshacer.participante} en esta quincena. Si ese dinero ya se usó en una entrega, no se podrá deshacer.`
+            : undefined
+        }
+        confirmLabel="Sí, deshacer"
+        danger
+        loading={deshaciendo}
+        onConfirm={deshacerPago}
+        onCancel={() => setConfirmDeshacer(null)}
       />
     </div>
   );
