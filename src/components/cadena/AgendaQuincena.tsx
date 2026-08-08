@@ -3,8 +3,9 @@ import { ChevronLeft, ChevronRight, CheckCheck } from 'lucide-react';
 import { api } from '../../utils/api';
 import { money } from '../../utils/money';
 import { Button } from '../ui/Button';
-import { Input, Label } from '../ui/Field';
+import { Input, Label, Select } from '../ui/Field';
 import { ConfirmPopover } from '../ui/ConfirmPopover';
+import { METODOS_PAGO } from '../../constants/metodosPago';
 import type { GrillaCadena, Obligacion } from '../../types';
 
 // Vista para móvil: en vez de comprimir la matriz completa, se navega
@@ -17,6 +18,8 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirmPago, setConfirmPago] = useState<Obligacion | null>(null);
   const [montoPago, setMontoPago] = useState('');
+  const [metodoPago, setMetodoPago] = useState<string>(METODOS_PAGO[0]);
+  const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
   const [confirmCerrar, setConfirmCerrar] = useState(false);
   const [cerrando, setCerrando] = useState(false);
 
@@ -58,6 +61,8 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
   function abrirConfirmPago(obligacion: Obligacion) {
     setConfirmPago(obligacion);
     setMontoPago(String(obligacion.saldo_pendiente));
+    setMetodoPago(METODOS_PAGO[0]);
+    setFechaPago(hoy);
   }
 
   const montoPagoValido = confirmPago != null && Number(montoPago) > 0 && Number(montoPago) <= confirmPago.saldo_pendiente;
@@ -69,7 +74,7 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
     setBusyId(obligacion.id);
     setConfirmPago(null);
     try {
-      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: monto, metodo_pago: 'Efectivo' });
+      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: monto, metodo_pago: metodoPago, fecha_pago: fechaPago });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar pago');
@@ -176,18 +181,36 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
         onConfirm={confirmarPago}
         onCancel={() => setConfirmPago(null)}
       >
-        <Label>Monto a pagar</Label>
-        <Input
-          type="number"
-          min={1}
-          max={confirmPago?.saldo_pendiente}
-          value={montoPago}
-          onChange={(e) => setMontoPago(e.target.value)}
-          autoFocus
-        />
-        {confirmPago && !montoPagoValido && montoPago !== '' && (
-          <p className="mt-1 text-xs text-error">El monto debe ser mayor a 0 y no puede superar el saldo pendiente.</p>
-        )}
+        <div className="flex flex-col gap-2">
+          <div>
+            <Label>Monto</Label>
+            <Input
+              type="number"
+              min={1}
+              max={confirmPago?.saldo_pendiente}
+              value={montoPago}
+              onChange={(e) => setMontoPago(e.target.value)}
+              autoFocus
+            />
+            {confirmPago && !montoPagoValido && montoPago !== '' && (
+              <p className="mt-1 text-xs text-error">El monto debe ser mayor a 0 y no puede superar el saldo pendiente.</p>
+            )}
+          </div>
+          <div>
+            <Label>Fecha de pago</Label>
+            <Input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} />
+          </div>
+          <div>
+            <Label>Método de pago</Label>
+            <Select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
+              {METODOS_PAGO.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
       </ConfirmPopover>
       <ConfirmPopover
         open={confirmCerrar}

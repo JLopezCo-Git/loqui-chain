@@ -24,6 +24,7 @@ router.post('/', (req, res) => {
     obligacion_id: z.number().int(),
     valor_pago: z.number().positive(),
     metodo_pago: z.string().min(1),
+    fecha_pago: z.string().optional().nullable(),
     comprobante_url: z.string().optional().nullable(),
     observaciones: z.string().optional().nullable()
   });
@@ -35,10 +36,17 @@ router.post('/', (req, res) => {
   if (!o) return res.status(404).json({ error: 'Obligación no existe' });
 
   const tx = db.transaction(() => {
-    const pagoResult = db.prepare(`
-      INSERT INTO pagos(obligacion_id, cadena_id, participante_id, valor_pago, metodo_pago, comprobante_url, registrado_por, observaciones)
-      VALUES (?,?,?,?,?,?,?,?)
-    `).run(o.id, o.cadena_id, o.participante_id, data.valor_pago, data.metodo_pago, data.comprobante_url || null, req.user.id, data.observaciones || null);
+    // fecha_pago es opcional -- si no se manda, la tabla usa su DEFAULT
+    // CURRENT_TIMESTAMP. Permite registrar hoy un pago que ocurrió antes.
+    const columnas = ['obligacion_id', 'cadena_id', 'participante_id', 'valor_pago', 'metodo_pago', 'comprobante_url', 'registrado_por', 'observaciones'];
+    const valores = [o.id, o.cadena_id, o.participante_id, data.valor_pago, data.metodo_pago, data.comprobante_url || null, req.user.id, data.observaciones || null];
+    if (data.fecha_pago) {
+      columnas.push('fecha_pago');
+      valores.push(data.fecha_pago);
+    }
+    const pagoResult = db
+      .prepare(`INSERT INTO pagos(${columnas.join(', ')}) VALUES (${columnas.map(() => '?').join(',')})`)
+      .run(...valores);
 
     const nuevoPagado = o.valor_pagado + data.valor_pago;
     const saldo = Math.max(o.valor_esperado - nuevoPagado, 0);
