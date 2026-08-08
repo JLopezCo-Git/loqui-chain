@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, CheckCheck } from 'lucide-react';
 import { api } from '../../utils/api';
 import { money } from '../../utils/money';
 import { Button } from '../ui/Button';
+import { Input, Label } from '../ui/Field';
 import { ConfirmPopover } from '../ui/ConfirmPopover';
 import type { GrillaCadena, Obligacion } from '../../types';
 
@@ -15,6 +16,7 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirmPago, setConfirmPago] = useState<Obligacion | null>(null);
+  const [montoPago, setMontoPago] = useState('');
   const [confirmCerrar, setConfirmCerrar] = useState(false);
   const [cerrando, setCerrando] = useState(false);
 
@@ -53,13 +55,21 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
     return data.filas.find((f) => f.entrega?.quincena_id === quincena.id)?.entrega || null;
   }, [data, quincena]);
 
+  function abrirConfirmPago(obligacion: Obligacion) {
+    setConfirmPago(obligacion);
+    setMontoPago(String(obligacion.saldo_pendiente));
+  }
+
+  const montoPagoValido = confirmPago != null && Number(montoPago) > 0 && Number(montoPago) <= confirmPago.saldo_pendiente;
+
   async function confirmarPago() {
-    if (!confirmPago) return;
+    if (!confirmPago || !montoPagoValido) return;
     const obligacion = confirmPago;
+    const monto = Number(montoPago);
     setBusyId(obligacion.id);
     setConfirmPago(null);
     try {
-      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: obligacion.saldo_pendiente, metodo_pago: 'Efectivo' });
+      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: monto, metodo_pago: 'Efectivo' });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar pago');
@@ -146,7 +156,7 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
                 </span>
               </div>
               {!pagada && (
-                <Button variant={vencida ? 'danger' : 'ghost'} loading={busyId === obligacion.id} onClick={() => setConfirmPago(obligacion)}>
+                <Button variant={vencida ? 'danger' : 'ghost'} loading={busyId === obligacion.id} onClick={() => abrirConfirmPago(obligacion)}>
                   Marcar pagado
                 </Button>
               )}
@@ -157,12 +167,28 @@ export function AgendaQuincena({ cadenaId }: { cadenaId: number }) {
 
       <ConfirmPopover
         open={!!confirmPago}
-        title="Confirmar pago"
-        description={confirmPago ? `Marcar como pagado el total de ${money(confirmPago.saldo_pendiente)} de ${confirmPago.participante}.` : undefined}
-        confirmLabel="Marcar pagado"
+        title="Registrar pago"
+        description={confirmPago ? `${confirmPago.participante} — saldo pendiente: ${money(confirmPago.saldo_pendiente)}.` : undefined}
+        confirmLabel={
+          confirmPago && Number(montoPago) > 0 && Number(montoPago) < confirmPago.saldo_pendiente ? 'Registrar pago parcial' : 'Marcar pagado'
+        }
+        confirmDisabled={!montoPagoValido}
         onConfirm={confirmarPago}
         onCancel={() => setConfirmPago(null)}
-      />
+      >
+        <Label>Monto a pagar</Label>
+        <Input
+          type="number"
+          min={1}
+          max={confirmPago?.saldo_pendiente}
+          value={montoPago}
+          onChange={(e) => setMontoPago(e.target.value)}
+          autoFocus
+        />
+        {confirmPago && !montoPagoValido && montoPago !== '' && (
+          <p className="mt-1 text-xs text-error">El monto debe ser mayor a 0 y no puede superar el saldo pendiente.</p>
+        )}
+      </ConfirmPopover>
       <ConfirmPopover
         open={confirmCerrar}
         title="Cerrar quincena"

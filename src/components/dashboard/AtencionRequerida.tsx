@@ -4,6 +4,7 @@ import { api } from '../../utils/api';
 import { money } from '../../utils/money';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { Input, Label } from '../ui/Field';
 import { ConfirmPopover } from '../ui/ConfirmPopover';
 import type { Atencion, Obligacion } from '../../types';
 
@@ -15,6 +16,7 @@ function diasVencida(fechaLimite: string) {
 export function AtencionRequerida({ cadenaId, onAction }: { cadenaId: number; onAction: () => void }) {
   const [data, setData] = useState<Atencion | null>(null);
   const [confirmando, setConfirmando] = useState<{ tipo: 'pago'; obligacion: Obligacion } | { tipo: 'entrega' } | null>(null);
+  const [montoPago, setMontoPago] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -26,10 +28,14 @@ export function AtencionRequerida({ cadenaId, onAction }: { cadenaId: number; on
     load();
   }, [load]);
 
+  const montoPagoValido =
+    confirmando?.tipo === 'pago' && Number(montoPago) > 0 && Number(montoPago) <= confirmando.obligacion.saldo_pendiente;
+
   async function confirmarPago(obligacion: Obligacion) {
+    if (!montoPagoValido) return;
     setBusy(true);
     try {
-      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: obligacion.saldo_pendiente, metodo_pago: 'Efectivo' });
+      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: Number(montoPago), metodo_pago: 'Efectivo' });
       setConfirmando(null);
       await load();
       onAction();
@@ -65,7 +71,13 @@ export function AtencionRequerida({ cadenaId, onAction }: { cadenaId: number; on
       tone: 'error' as const,
       texto: `${o.participante} — cuota vencida hace ${diasVencida(o.fecha_limite_pago || '')} día(s) — ${money(o.saldo_pendiente)}`,
       accion: (
-        <Button variant="danger" onClick={() => setConfirmando({ tipo: 'pago', obligacion: o })}>
+        <Button
+          variant="danger"
+          onClick={() => {
+            setConfirmando({ tipo: 'pago', obligacion: o });
+            setMontoPago(String(o.saldo_pendiente));
+          }}
+        >
           Marcar pagado
         </Button>
       ),
@@ -133,17 +145,36 @@ export function AtencionRequerida({ cadenaId, onAction }: { cadenaId: number; on
 
       <ConfirmPopover
         open={confirmando?.tipo === 'pago'}
-        title="Confirmar pago"
+        title="Registrar pago"
         description={
           confirmando?.tipo === 'pago'
-            ? `Marcar como pagado el total de ${money(confirmando.obligacion.saldo_pendiente)} de ${confirmando.obligacion.participante}.`
+            ? `${confirmando.obligacion.participante} — saldo pendiente: ${money(confirmando.obligacion.saldo_pendiente)}.`
             : undefined
         }
-        confirmLabel="Marcar pagado"
+        confirmLabel={
+          confirmando?.tipo === 'pago' && Number(montoPago) > 0 && Number(montoPago) < confirmando.obligacion.saldo_pendiente
+            ? 'Registrar pago parcial'
+            : 'Marcar pagado'
+        }
+        confirmDisabled={!montoPagoValido}
+        danger
         loading={busy}
         onConfirm={() => confirmando?.tipo === 'pago' && confirmarPago(confirmando.obligacion)}
         onCancel={() => setConfirmando(null)}
-      />
+      >
+        <Label>Monto a pagar</Label>
+        <Input
+          type="number"
+          min={1}
+          max={confirmando?.tipo === 'pago' ? confirmando.obligacion.saldo_pendiente : undefined}
+          value={montoPago}
+          onChange={(e) => setMontoPago(e.target.value)}
+          autoFocus
+        />
+        {confirmando?.tipo === 'pago' && !montoPagoValido && montoPago !== '' && (
+          <p className="mt-1 text-xs text-error">El monto debe ser mayor a 0 y no puede superar el saldo pendiente.</p>
+        )}
+      </ConfirmPopover>
       <ConfirmPopover
         open={confirmando?.tipo === 'entrega'}
         title="Confirmar entrega"

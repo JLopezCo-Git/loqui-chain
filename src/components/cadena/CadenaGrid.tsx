@@ -3,6 +3,7 @@ import { CheckCheck } from 'lucide-react';
 import { api } from '../../utils/api';
 import { money } from '../../utils/money';
 import { Button } from '../ui/Button';
+import { Input, Label } from '../ui/Field';
 import { ConfirmPopover } from '../ui/ConfirmPopover';
 import type { GrillaCadena, Obligacion, Entrega } from '../../types';
 
@@ -44,6 +45,7 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirmPago, setConfirmPago] = useState<Obligacion | null>(null);
+  const [montoPago, setMontoPago] = useState('');
   const [confirmEntrega, setConfirmEntrega] = useState<Entrega | null>(null);
   const [confirmQuincena, setConfirmQuincena] = useState<Quincena | null>(null);
   const [cerrandoQuincena, setCerrandoQuincena] = useState(false);
@@ -69,21 +71,34 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
     return proxima ? proxima.id : data.quincenas.at(-1)?.id ?? null;
   }, [data, hoy]);
 
+  function abrirConfirmPago(obligacion: Obligacion) {
+    setConfirmPago(obligacion);
+    setMontoPago(String(obligacion.saldo_pendiente));
+  }
+
+  const montoPagoValido = confirmPago != null && Number(montoPago) > 0 && Number(montoPago) <= confirmPago.saldo_pendiente;
+
   async function confirmarPago() {
-    if (!confirmPago || !data) return;
+    if (!confirmPago || !data || !montoPagoValido) return;
     const obligacion = confirmPago;
+    const monto = Number(montoPago);
     setBusyId(obligacion.id);
     // Actualización optimista: refleja el pago antes de que vuelva la red.
     setData({
       ...data,
       filas: data.filas.map((f) => ({
         ...f,
-        celdas: f.celdas.map((c) => (c?.id === obligacion.id ? { ...c, estado: 'PAGADA', valor_pagado: c.valor_esperado, saldo_pendiente: 0 } : c)),
+        celdas: f.celdas.map((c) => {
+          if (c?.id !== obligacion.id) return c;
+          const valor_pagado = c.valor_pagado + monto;
+          const saldo_pendiente = Math.max(c.valor_esperado - valor_pagado, 0);
+          return { ...c, valor_pagado, saldo_pendiente, estado: saldo_pendiente === 0 ? 'PAGADA' : 'PARCIAL' };
+        }),
       })),
     });
     setConfirmPago(null);
     try {
-      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: obligacion.saldo_pendiente, metodo_pago: 'Efectivo' });
+      await api.post('/pagos', { obligacion_id: obligacion.id, valor_pago: monto, metodo_pago: 'Efectivo' });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar pago');
@@ -218,7 +233,7 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
                       <td key={quincena.id} className={`p-1 text-center ${quincena.id === quincenaActualId ? 'bg-accent/5' : ''}`}>
                         <button
                           disabled={!obligacion || estado === 'pagada' || busyId === obligacion?.id}
-                          onClick={() => obligacion && setConfirmPago(obligacion)}
+                          onClick={() => obligacion && abrirConfirmPago(obligacion)}
                           aria-label={
                             obligacion
                               ? `${fila.participante}, quincena del ${fechaCorta(quincena.fecha_programada)}: ${ETIQUETA_ESTADO[estado]}, ${money(obligacion.saldo_pendiente)}`
@@ -270,12 +285,28 @@ export function CadenaGrid({ cadenaId }: { cadenaId: number }) {
 
       <ConfirmPopover
         open={!!confirmPago}
-        title="Confirmar pago"
-        description={confirmPago ? `Marcar como pagado el total de ${money(confirmPago.saldo_pendiente)} de ${confirmPago.participante}.` : undefined}
-        confirmLabel="Marcar pagado"
+        title="Registrar pago"
+        description={confirmPago ? `${confirmPago.participante} — saldo pendiente: ${money(confirmPago.saldo_pendiente)}.` : undefined}
+        confirmLabel={
+          confirmPago && Number(montoPago) > 0 && Number(montoPago) < confirmPago.saldo_pendiente ? 'Registrar pago parcial' : 'Marcar pagado'
+        }
+        confirmDisabled={!montoPagoValido}
         onConfirm={confirmarPago}
         onCancel={() => setConfirmPago(null)}
-      />
+      >
+        <Label>Monto a pagar</Label>
+        <Input
+          type="number"
+          min={1}
+          max={confirmPago?.saldo_pendiente}
+          value={montoPago}
+          onChange={(e) => setMontoPago(e.target.value)}
+          autoFocus
+        />
+        {confirmPago && !montoPagoValido && montoPago !== '' && (
+          <p className="mt-1 text-xs text-error">El monto debe ser mayor a 0 y no puede superar el saldo pendiente.</p>
+        )}
+      </ConfirmPopover>
       <ConfirmPopover
         open={!!confirmEntrega}
         title="Confirmar entrega"

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { Button } from './Button';
 
 interface ConfirmPopoverProps {
@@ -9,6 +10,8 @@ interface ConfirmPopoverProps {
   cancelLabel?: string;
   danger?: boolean;
   loading?: boolean;
+  confirmDisabled?: boolean;
+  children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -16,6 +19,8 @@ interface ConfirmPopoverProps {
 // Confirmación contextual liviana -- reemplaza window.confirm/window.alert,
 // que no son estilizables ni consistentes entre navegadores y lectores de
 // pantalla. Cierra con Escape, foco inicial en "Cancelar" (acción segura).
+// `children` permite meter un campo editable (ej. monto de pago parcial)
+// entre la descripción y los botones, sin duplicar el shell del diálogo.
 export function ConfirmPopover({
   open,
   title,
@@ -24,6 +29,8 @@ export function ConfirmPopover({
   cancelLabel = 'Cancelar',
   danger = false,
   loading = false,
+  confirmDisabled = false,
+  children,
   onConfirm,
   onCancel,
 }: ConfirmPopoverProps) {
@@ -31,13 +38,15 @@ export function ConfirmPopover({
 
   useEffect(() => {
     if (!open) return;
-    cancelRef.current?.focus();
+    // Si hay contenido custom (ej. un campo de monto), dejamos que ese
+    // campo se quede con el foco inicial en vez de robárselo al Cancelar.
+    if (!children) cancelRef.current?.focus();
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') onCancel();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onCancel]);
+  }, [open, onCancel, children]);
 
   if (!open) return null;
 
@@ -57,11 +66,12 @@ export function ConfirmPopover({
           {title}
         </h3>
         {description && <p className="mt-2 text-sm text-text-muted">{description}</p>}
+        {children && <div className="mt-3">{children}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <Button ref={cancelRef} variant="ghost" onClick={onCancel} disabled={loading}>
             {cancelLabel}
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading} disabled={confirmDisabled}>
             {confirmLabel}
           </Button>
         </div>
