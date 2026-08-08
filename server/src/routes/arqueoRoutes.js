@@ -7,10 +7,23 @@ import { audit } from '../services/auditService.js';
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
 
-// Cuánto debería haber en caja según lo ya pagado por los participantes
-// (no lo que hay físicamente -- eso es lo que se está arqueando).
+// Cuánto debería haber en caja según lo ya pagado por los participantes --
+// solo de las quincenas que TODAVÍA tienen algún pago pendiente. Una
+// quincena ya cerrada (todos pagaron, ya se entregó) es un ciclo resuelto:
+// su plata ya entró y salió de la caja, así que no debe seguir sumando al
+// "esperado" del arqueo -- si no, el esperado crece para siempre y deja de
+// representar cuánta plata debería seguir físicamente en la caja hoy.
 function esperadoCadena(cadenaId) {
-  return db.prepare('SELECT COALESCE(SUM(valor_pagado),0) n FROM obligaciones WHERE cadena_id = ?').get(cadenaId).n;
+  return db
+    .prepare(
+      `SELECT COALESCE(SUM(o.valor_pagado), 0) n
+       FROM obligaciones o
+       WHERE o.cadena_id = ?
+         AND o.quincena_id IN (
+           SELECT quincena_id FROM obligaciones WHERE cadena_id = ? AND estado <> 'PAGADA'
+         )`,
+    )
+    .get(cadenaId, cadenaId).n;
 }
 
 function conItems(arqueo) {
