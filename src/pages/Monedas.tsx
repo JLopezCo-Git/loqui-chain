@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../utils/api';
 import { money } from '../utils/money';
 import { Card } from '../components/ui/Card';
@@ -23,6 +24,7 @@ export function Monedas() {
   const [historial, setHistorial] = useState<ConteoMonedas[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
+  const [expandidoId, setExpandidoId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setHistorial(await api.get<ConteoMonedas[]>('/monedas'));
@@ -184,6 +186,7 @@ export function Monedas() {
             <table className="w-full text-left text-sm">
               <thead className="bg-surface-2 text-text-muted">
                 <tr>
+                  <th className="px-3 py-2 font-medium"></th>
                   <th className="px-3 py-2 font-medium">Fecha</th>
                   <th className="px-3 py-2 font-medium">Monedas</th>
                   <th className="px-3 py-2 font-medium">Billetes</th>
@@ -192,19 +195,88 @@ export function Monedas() {
                 </tr>
               </thead>
               <tbody>
-                {historial.map((c) => (
-                  <tr key={c.id} className="border-t border-border">
-                    <td className="px-3 py-2 text-text-muted">{c.fecha}</td>
-                    <td className="px-3 py-2 text-text">{money(c.total_monedas)}</td>
-                    <td className="px-3 py-2 text-text">{money(c.total_billetes)}</td>
-                    <td className="px-3 py-2 font-semibold text-text">{money(c.total_general)}</td>
-                    <td className="px-3 py-2">
-                      <Button variant="ghost" onClick={() => eliminar(c.id)}>
-                        Eliminar
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {historial.map((c) => {
+                  const abierto = expandidoId === c.id;
+                  return (
+                    <>
+                      <tr
+                        key={c.id}
+                        className="cursor-pointer border-t border-border hover:bg-surface-2"
+                        onClick={() => setExpandidoId(abierto ? null : c.id)}
+                      >
+                        <td className="px-3 py-2 text-text-faint">
+                          {abierto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </td>
+                        <td className="px-3 py-2 text-text-muted">{c.fecha}</td>
+                        <td className="px-3 py-2 text-text">{money(c.total_monedas)}</td>
+                        <td className="px-3 py-2 text-text">{money(c.total_billetes)}</td>
+                        <td className="px-3 py-2 font-semibold text-text">{money(c.total_general)}</td>
+                        <td className="px-3 py-2">
+                          <Button
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              eliminar(c.id);
+                            }}
+                          >
+                            Eliminar
+                          </Button>
+                        </td>
+                      </tr>
+                      {abierto && (
+                        <tr key={`${c.id}-detalle`} className="border-t border-border bg-surface-2/50">
+                          <td colSpan={6} className="px-3 py-3">
+                            {c.observaciones && <p className="mb-2 text-xs text-text-faint">{c.observaciones}</p>}
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                              <div>
+                                <h4 className="mb-1 text-xs font-semibold text-text-muted">Monedas</h4>
+                                <table className="w-full text-left text-xs">
+                                  <thead className="text-text-faint">
+                                    <tr>
+                                      <th className="py-1 pr-2 font-medium">Denom.</th>
+                                      <th className="py-1 pr-2 font-medium">Cantidad</th>
+                                      <th className="py-1 font-medium">Subtotal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {c.detalle.monedas.map((m) => (
+                                      <tr key={m.valor} className="border-t border-border">
+                                        <td className="py-1 pr-2 text-text">{money(m.valor)}</td>
+                                        <td className="py-1 pr-2 text-text-muted">{m.monedasTotales}</td>
+                                        <td className="py-1 font-medium text-text">{money(m.subtotal)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div>
+                                <h4 className="mb-1 text-xs font-semibold text-text-muted">Billetes</h4>
+                                <table className="w-full text-left text-xs">
+                                  <thead className="text-text-faint">
+                                    <tr>
+                                      <th className="py-1 pr-2 font-medium">Denom.</th>
+                                      <th className="py-1 pr-2 font-medium">Cantidad</th>
+                                      <th className="py-1 font-medium">Subtotal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {c.detalle.billetes.map((b) => (
+                                      <tr key={b.valor} className="border-t border-border">
+                                        <td className="py-1 pr-2 text-text">{money(b.valor)}</td>
+                                        <td className="py-1 pr-2 text-text-muted">{b.cantidad}</td>
+                                        <td className="py-1 font-medium text-text">{money(b.subtotal)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>
