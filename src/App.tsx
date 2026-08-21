@@ -5,6 +5,7 @@ import { AppLayout } from './layouts/AppLayout';
 import { Dashboard } from './pages/Dashboard';
 import { Cadenas } from './pages/Cadenas';
 import { Participantes } from './pages/Participantes';
+import { Monedas } from './pages/Monedas';
 import { IA } from './pages/IA';
 
 export function App() {
@@ -19,6 +20,7 @@ export function App() {
           <Route index element={<Dashboard />} />
           <Route path="cadenas" element={<Cadenas />} />
           <Route path="participantes" element={<Participantes />} />
+          <Route path="monedas" element={<Monedas />} />
           <Route path="ia" element={<IA />} />
         </Route>
       </Routes>

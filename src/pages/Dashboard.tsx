@@ -10,18 +10,25 @@ import { AgendaQuincena } from '../components/cadena/AgendaQuincena';
 import { Arqueo } from '../components/cadena/Arqueo';
 import { AtencionRequerida } from '../components/dashboard/AtencionRequerida';
 import { useIsMobile } from '../hooks/useIsMobile';
-import type { Cadena, DashboardResumen } from '../types';
+import type { Atencion, Cadena, DashboardResumen, Entrega } from '../types';
 
 export function Dashboard() {
   const [data, setData] = useState<DashboardResumen | null>(null);
   const [cadenasActivas, setCadenasActivas] = useState<Cadena[]>([]);
   const [cadenaId, setCadenaId] = useState<number | null>(null);
+  const [proximaEntrega, setProximaEntrega] = useState<Entrega | null>(null);
   const [arqueoAbierto, setArqueoAbierto] = useState(false);
   const isMobile = useIsMobile();
 
   const loadResumen = useCallback(async () => {
     setData(await api.get<DashboardResumen>('/reportes/dashboard'));
   }, []);
+
+  const loadProximaEntrega = useCallback(async () => {
+    if (!cadenaId) return;
+    const atencion = await api.get<Atencion>(`/reportes/cadena/${cadenaId}/atencion`);
+    setProximaEntrega(atencion.proximaEntrega);
+  }, [cadenaId]);
 
   useEffect(() => {
     loadResumen();
@@ -31,6 +38,15 @@ export function Dashboard() {
       if (activas.length) setCadenaId(activas[0].id);
     });
   }, [loadResumen]);
+
+  useEffect(() => {
+    loadProximaEntrega();
+  }, [loadProximaEntrega]);
+
+  function onAction() {
+    loadResumen();
+    loadProximaEntrega();
+  }
 
   if (!data) {
     return (
@@ -53,7 +69,21 @@ export function Dashboard() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard hero label="Caja disponible" value={money(data.cajaGlobal)} />
         <StatCard hero label="Falta por cobrar" value={money(data.pendienteGlobal)} tone={data.pendienteGlobal > 0 ? 'warning' : 'neutral'} />
-        <StatCard hero label="Entregas pendientes" value={data.entregasPendientes} tone={data.entregasPendientes > 0 ? 'warning' : 'neutral'} />
+        <div className="rounded-lg border border-border bg-surface p-5 shadow-token-1">
+          <span className="block text-xs font-medium text-text-muted">Próxima entrega</span>
+          {proximaEntrega ? (
+            <>
+              <b className="mt-1 block truncate text-2xl font-bold text-text" title={proximaEntrega.participante}>
+                {proximaEntrega.participante}
+              </b>
+              <span className="text-sm text-text-muted">
+                {money(proximaEntrega.valor_esperado)} · {proximaEntrega.fecha_programada}
+              </span>
+            </>
+          ) : (
+            <b className="mt-1 block text-lg font-bold text-text-faint">Sin entregas pendientes</b>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
@@ -61,7 +91,7 @@ export function Dashboard() {
         <StatCard label="Cadenas activas" value={data.cadenasActivas} />
       </div>
 
-      {cadenaId && <AtencionRequerida cadenaId={cadenaId} onAction={loadResumen} />}
+      {cadenaId && <AtencionRequerida cadenaId={cadenaId} onAction={onAction} />}
 
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

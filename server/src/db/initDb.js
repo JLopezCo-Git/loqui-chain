@@ -181,6 +181,18 @@ CREATE TABLE IF NOT EXISTS arqueo_items (
   FOREIGN KEY(arqueo_id) REFERENCES arqueos_caja(id)
 );
 
+CREATE TABLE IF NOT EXISTS conteos_monedas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  total_monedas REAL NOT NULL,
+  total_billetes REAL NOT NULL,
+  total_general REAL NOT NULL,
+  detalle TEXT NOT NULL,
+  observaciones TEXT,
+  registrado_por INTEGER,
+  FOREIGN KEY(registrado_por) REFERENCES usuarios(id)
+);
+
 CREATE TABLE IF NOT EXISTS plantillas_cadena (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,

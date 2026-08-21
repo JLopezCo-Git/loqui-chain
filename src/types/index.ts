@@ -136,6 +136,32 @@ export interface Atencion {
   arqueoFaltante: number | null;
 }
 
+export interface DetalleMoneda {
+  valor: number;
+  porGrupo: number;
+  grupos: number;
+  monedasTotales: number;
+  valorPorGrupo: number;
+  subtotal: number;
+}
+
+export interface DetalleBillete {
+  valor: number;
+  cantidad: number;
+  subtotal: number;
+}
+
+export interface ConteoMonedas {
+  id: number;
+  fecha: string;
+  total_monedas: number;
+  total_billetes: number;
+  total_general: number;
+  detalle: { monedas: DetalleMoneda[]; billetes: DetalleBillete[] };
+  observaciones: string | null;
+  registrado_por: number | null;
+}
+
 export interface DashboardResumen {
   cadenasTotal: number;
   cadenasActivas: number;
